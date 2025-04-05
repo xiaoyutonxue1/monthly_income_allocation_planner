@@ -101,7 +101,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNavigate } from "react-router-dom";
 import { BudgetProgressBar } from "./progress-bar";
 import { CopyIcon, HamburgerMenuIcon, MagnifyingGlassIcon, Cross2Icon, StarIcon, PlusCircledIcon, RocketIcon, PersonIcon } from "@radix-ui/react-icons";
-import { ChevronDownIcon, ExclamationTriangleIcon, FileTextIcon, SmartphoneIcon, BookmarkIcon, BellIcon, GiftIcon, LogOutIcon, InfoCircledIcon } from "@radix-ui/react-icons";
+import { ChevronDownIcon, ExclamationTriangleIcon, FileTextIcon, BookmarkIcon, BellIcon, InfoCircledIcon } from "@radix-ui/react-icons";
 
 interface Allocation {
   id: string;
