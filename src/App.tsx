@@ -1939,12 +1939,7 @@ function App() {
                                               ))}
                                             </SelectContent>
                                           </Select>
-                                          <Popover>
-                                            <PopoverTrigger>
-                                              <div></div>
-                                            </PopoverTrigger>
-                                            <PopoverContent></PopoverContent>
-                                          </Popover>
+                                      
                                         </TableCell>
                                       )}
                                     <TableCell>
