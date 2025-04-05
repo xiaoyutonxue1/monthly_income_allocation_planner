@@ -103,6 +103,7 @@ import { BudgetProgressBar } from "./progress-bar";
 import { CopyIcon, HamburgerMenuIcon, MagnifyingGlassIcon, Cross2Icon, StarIcon, PlusCircledIcon, RocketIcon, PersonIcon } from "@radix-ui/react-icons";
 import { ChevronDownIcon, ExclamationTriangleIcon, FileTextIcon, BookmarkIcon, BellIcon, InfoCircledIcon } from "@radix-ui/react-icons";
 import { HexColorPicker } from "react-colorful";
+import { DragDropContext, Droppable, Draggable, DropResult } from "react-beautiful-dnd";
 
 interface Allocation {
   id: string;
@@ -1568,152 +1569,147 @@ function App() {
                             )}
                           </div>
                           <div className="max-h-[320px] overflow-y-auto p-2">
-                            <div className="space-y-2 p-2">
-                              {categories.map((category) => (
-                                <div
-                                  key={category.id}
-                                  className="flex items-center justify-between group bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm hover:shadow-md transition-all duration-200 border border-gray-100 dark:border-gray-700"
-                                >
-                                  <div className="flex items-center gap-2 flex-1">
-                                    <div
-                                      className="w-4 h-4 rounded-full flex-shrink-0 cursor-pointer"
-                                      style={{
-                                        backgroundColor: category.color,
-                                      }}
-                                      onClick={() => {
-                                        const colors = document.getElementById(`colors-${category.id}`);
-                                        if (colors) {
-                                          colors.style.display = colors.style.display === 'none' ? 'flex' : 'none';
-                                        }
-                                      }}
-                                    ></div>
-                                    <input
-                                      type="text"
-                                      value={category.name}
-                                      onChange={(e) => {
-                                        const newCategories = [...categories];
-                                        const index = newCategories.findIndex(
-                                          (c) => c.id === category.id,
-                                        );
-                                        newCategories[index] = {
-                                          ...newCategories[index],
-                                          name: e.target.value,
-                                        };
-                                        saveCategories(newCategories);
-                                      }}
-                                      className="text-sm border-none bg-transparent focus:outline-none focus:ring-1 focus:ring-green-500 px-1 py-0.5 rounded flex-1"
-                                    />
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <div 
-                                      id={`colors-${category.id}`} 
-                                      className="hidden flex-wrap gap-1 p-1 bg-gray-50 dark:bg-gray-900 rounded-md absolute z-10 shadow-lg border border-gray-200 dark:border-gray-700"
-                                      style={{ display: 'none' }}
-                                    >
-                                      <div className="w-full p-2">
-                                        <HexColorPicker 
-                                          color={category.color}
-                                          onChange={(color) => {
-                                            const newCategories = [...categories];
-                                            const index = newCategories.findIndex((c) => c.id === category.id);
-                                            newCategories[index] = {
-                                              ...newCategories[index],
-                                              color,
-                                            };
-                                            saveCategories(newCategories);
-                                          }}
-                                        />
-                                        <div className="flex items-center gap-2 mt-2">
-                                          <div 
-                                            className="w-6 h-6 rounded-full border border-gray-200"
-                                            style={{ backgroundColor: category.color }}
-                                          />
-                                          <Input
-                                            type="text"
-                                            value={category.color}
-                                            placeholder="#000000"
-                                            className="h-7 text-xs"
-                                            onChange={(e) => {
-                                              const color = e.target.value;
-                                              const newCategories = [...categories];
-                                              const index = newCategories.findIndex((c) => c.id === category.id);
-                                              newCategories[index] = {
-                                                ...newCategories[index],
-                                                color,
-                                              };
-                                              saveCategories(newCategories);
-                                            }}
-                                          />
-                                          <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-7 px-2 text-xs"
-                                            onClick={() => {
-                                              const colors = document.getElementById(`colors-${category.id}`);
-                                              if (colors) {
-                                                colors.style.display = 'none';
-                                              }
-                                            }}
+                            <DragDropContext
+                              onDragEnd={(result) => {
+                                if (!result.destination) return;
+                                
+                                const sourceIndex = result.source.index;
+                                const destinationIndex = result.destination.index;
+                                
+                                if (sourceIndex === destinationIndex) return;
+                                
+                                const newCategories = [...categories];
+                                const [removed] = newCategories.splice(sourceIndex, 1);
+                                newCategories.splice(destinationIndex, 0, removed);
+                                
+                                saveCategories(newCategories);
+                              }}
+                            >
+                              <Droppable droppableId="categories">
+                                {(provided) => (
+                                  <div className="space-y-2 p-2" 
+                                    ref={provided.innerRef}
+                                    {...provided.droppableProps}
+                                  >
+                                    {categories.map((category, index) => (
+                                      <Draggable 
+                                        key={category.id} 
+                                        draggableId={category.id} 
+                                        index={index}
+                                      >
+                                        {(provided, snapshot) => (
+                                          <div
+                                            ref={provided.innerRef}
+                                            {...provided.draggableProps}
+                                            {...provided.dragHandleProps}
+                                            className={`flex items-center justify-between group bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm hover:shadow-md transition-all duration-200 border border-gray-100 dark:border-gray-700 ${snapshot.isDragging ? 'opacity-70 shadow-lg border-blue-300' : ''}`}
                                           >
-                                            确定
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 w-7 p-0 rounded-full hover:bg-gray-100"
-                                        onClick={() => {
-                                          const index = categories.findIndex((c) => c.id === category.id);
-                                          if (index > 0) {
-                                            const newCategories = [...categories];
-                                            const temp = newCategories[index];
-                                            newCategories[index] = newCategories[index - 1];
-                                            newCategories[index - 1] = temp;
-                                            saveCategories(newCategories);
-                                          }
-                                        }}
-                                        title="上移"
-                                        disabled={categories.findIndex((c) => c.id === category.id) === 0}
-                                      >
-                                        <ChevronUpIcon className="h-4 w-4" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 w-7 p-0 rounded-full hover:bg-gray-100"
-                                        onClick={() => {
-                                          const index = categories.findIndex((c) => c.id === category.id);
-                                          if (index < categories.length - 1) {
-                                            const newCategories = [...categories];
-                                            const temp = newCategories[index];
-                                            newCategories[index] = newCategories[index + 1];
-                                            newCategories[index + 1] = temp;
-                                            saveCategories(newCategories);
-                                          }
-                                        }}
-                                        title="下移"
-                                        disabled={categories.findIndex((c) => c.id === category.id) === categories.length - 1}
-                                      >
-                                        <ChevronDownIcon className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7 w-7 p-0 rounded-full bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center border-red-100"
-                                      onClick={() => removeCategory(category.id)}
-                                      title="删除此分类"
-                                    >
-                                      <Trash2Icon className="h-4 w-4" />
-                                    </Button>
+                                            <div className="flex items-center gap-2 flex-1">
+                                              <div
+                                                className="w-4 h-4 rounded-full flex-shrink-0 cursor-pointer"
+                                                style={{
+                                                  backgroundColor: category.color,
+                                                }}
+                                                onClick={() => {
+                                                  const colors = document.getElementById(`colors-${category.id}`);
+                                                  if (colors) {
+                                                    colors.style.display = colors.style.display === 'none' ? 'flex' : 'none';
+                                                  }
+                                                }}
+                                              ></div>
+                                              <input
+                                                type="text"
+                                                value={category.name}
+                                                onChange={(e) => {
+                                                  const newCategories = [...categories];
+                                                  const index = newCategories.findIndex(
+                                                    (c) => c.id === category.id,
+                                                  );
+                                                  newCategories[index] = {
+                                                    ...newCategories[index],
+                                                    name: e.target.value,
+                                                  };
+                                                  saveCategories(newCategories);
+                                                }}
+                                                className="text-sm border-none bg-transparent focus:outline-none focus:ring-1 focus:ring-green-500 px-1 py-0.5 rounded flex-1"
+                                              />
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <div 
+                                                id={`colors-${category.id}`} 
+                                                className="hidden flex-wrap gap-1 p-1 bg-gray-50 dark:bg-gray-900 rounded-md absolute z-10 shadow-lg border border-gray-200 dark:border-gray-700"
+                                                style={{ display: 'none' }}
+                                              >
+                                                <div className="w-full p-2">
+                                                  <HexColorPicker 
+                                                    color={category.color}
+                                                    onChange={(color) => {
+                                                      const newCategories = [...categories];
+                                                      const index = newCategories.findIndex((c) => c.id === category.id);
+                                                      newCategories[index] = {
+                                                        ...newCategories[index],
+                                                        color,
+                                                      };
+                                                      saveCategories(newCategories);
+                                                    }}
+                                                  />
+                                                  <div className="flex items-center gap-2 mt-2">
+                                                    <div 
+                                                      className="w-6 h-6 rounded-full border border-gray-200"
+                                                      style={{ backgroundColor: category.color }}
+                                                    />
+                                                    <Input
+                                                      type="text"
+                                                      value={category.color}
+                                                      placeholder="#000000"
+                                                      className="h-7 text-xs"
+                                                      onChange={(e) => {
+                                                        const color = e.target.value;
+                                                        const newCategories = [...categories];
+                                                        const index = newCategories.findIndex((c) => c.id === category.id);
+                                                        newCategories[index] = {
+                                                          ...newCategories[index],
+                                                          color,
+                                                        };
+                                                        saveCategories(newCategories);
+                                                      }}
+                                                    />
+                                                    <Button
+                                                      type="button"
+                                                      variant="outline"
+                                                      size="sm"
+                                                      className="h-7 px-2 text-xs"
+                                                      onClick={() => {
+                                                        const colors = document.getElementById(`colors-${category.id}`);
+                                                        if (colors) {
+                                                          colors.style.display = 'none';
+                                                        }
+                                                      }}
+                                                    >
+                                                      确定
+                                                    </Button>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                              <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 w-7 p-0 rounded-full bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center border-red-100"
+                                                onClick={() => removeCategory(category.id)}
+                                                title="删除此分类"
+                                              >
+                                                <Trash2Icon className="h-4 w-4" />
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </Draggable>
+                                    ))}
+                                    {provided.placeholder}
                                   </div>
-                                </div>
-                              ))}
-                            </div>
+                                )}
+                              </Droppable>
+                            </DragDropContext>
                           </div>
                         </PopoverContent>
                       </Popover>
@@ -1731,6 +1727,7 @@ function App() {
                   <Table className="allocations-table-container">
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-8"></TableHead>
                         <TableHead>用途</TableHead>
                         <TableHead className="w-[120px]">金额</TableHead>
                         <TableHead className="w-[120px]">分类</TableHead>
@@ -1744,287 +1741,247 @@ function App() {
                         </TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
-                      <AnimatePresence>
-                      {currentMonthData.allocations.map((allocation) => (
-                          <motion.tr
-                            key={allocation.id}
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.2 }}
+                    <DragDropContext
+                      onDragEnd={(result: DropResult) => {
+                        if (!result.destination) return;
+                          
+                        const sourceIndex = result.source.index;
+                        const destinationIndex = result.destination.index;
+                          
+                        if (sourceIndex === destinationIndex) return;
+                          
+                        const newAllocations = [...currentMonthData.allocations];
+                        const [removed] = newAllocations.splice(sourceIndex, 1);
+                        newAllocations.splice(destinationIndex, 0, removed);
+                          
+                        updateMonthData({
+                          ...currentMonthData,
+                          allocations: newAllocations,
+                        });
+                      }}
+                    >
+                      <Droppable droppableId="allocations">
+                        {(provided) => (
+                          <TableBody
+                            {...provided.droppableProps}
+                            ref={provided.innerRef}
                           >
-                          <TableCell>
-                              <div className="relative group">
-                            <Input
-                              value={allocation.purpose}
-                              onChange={(e) =>
-                                    updateAllocation(
-                                      allocation.id,
-                                      "purpose",
-                                      e.target.value,
-                                    )
-                              }
-                              placeholder="输入用途"
-                                  className="w-full h-10 rounded-lg border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all bg-white dark:bg-gray-800 shadow-sm group-hover:shadow pl-2 pr-2 placeholder-gray-400"
-                                />
-                                {!allocation.purpose && (
-                                  <div className="absolute inset-y-0 left-2 flex items-center pointer-events-none text-gray-400">
-                                    <TagIcon className="h-4 w-4 opacity-70" />
-                                  </div>
-                                )}
-                              </div>
-                          </TableCell>
-                          <TableCell>
-                              <div className="relative group">
-                                <div className="absolute inset-y-0 left-2 flex items-center pointer-events-none z-10">
-                                  <span className="text-gray-500 dark:text-gray-400">
-                                    ¥
-                                  </span>
-                                </div>
-                            <Input
-                                  type="text" // 改为text类型以支持格式化显示
-                                  value={
-                                    allocation.amount
-                                      ? formatNumber(allocation.amount)
-                                      : ""
-                                  }
-                                  onChange={(e) => {
-                                    // 移除非数字字符
-                                    const numericValue = e.target.value.replace(
-                                      /[^\d]/g,
-                                      "",
-                                    );
-                                    updateAllocation(
-                                      allocation.id,
-                                      "amount",
-                                      numericValue ? Number(numericValue) : 0,
-                                    );
-                                  }}
-                              placeholder="0"
-                                  className="pl-6 w-full h-10 rounded-lg border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all bg-white dark:bg-gray-800 shadow-sm group-hover:shadow text-base"
-                            />
-                              </div>
-                          </TableCell>
-                          <TableCell>
-                              <div className="flex gap-1">
-                                <Select
-                                  value={allocation.category || ""}
-                                  onValueChange={(value) =>
-                                    updateAllocation(
-                                      allocation.id,
-                                      "category",
-                                      value,
-                                    )
-                                  }
-                                >
-                                  <SelectTrigger className="w-full h-9 border-gray-200">
-                                    <SelectValue placeholder="选择分类" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {categories.map((category) => (
-                                      <SelectItem
-                                        key={category.id}
-                                        value={category.id}
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <div
-                                            className="w-3 h-3 rounded-full"
-                                            style={{
-                                              backgroundColor: category.color,
-                                            }}
-                                          ></div>
-                                          {category.name}
-                                        </div>
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </TableCell>
-                            {activeTemplate &&
-                              TEMPLATE_GROUPS[activeTemplate]?.length > 0 && (
-                                <TableCell>
-                                  <Select
-                                    value={allocation.manualGroup || "auto"}
-                                    onValueChange={(value) =>
-                                      updateAllocationGroup(
-                                        allocation.id,
-                                        value,
-                                      )
-                                    }
+                            {currentMonthData.allocations.map((allocation, index) => (
+                              <Draggable
+                                key={allocation.id}
+                                draggableId={allocation.id}
+                                index={index}
+                              >
+                                {(provided, snapshot) => (
+                                  <TableRow
+                                    ref={provided.innerRef}
+                                    {...provided.draggableProps}
+                                    className={snapshot.isDragging ? "opacity-70 bg-blue-50" : ""}
                                   >
-                                    <SelectTrigger className="w-full h-9 border-gray-200">
-                                      <SelectValue>
-                                        {(() => {
-                                          const group =
-                                            getAllocationGroup(allocation);
-                                          if (!group)
-                                            return (
-                                              <span className="text-xs text-gray-400">
-                                                未分组
-                                              </span>
-                                            );
-
-                                          return (
-                                            <div className="flex items-center gap-1.5">
-                                              <div
-                                                className="w-2 h-2 rounded-full"
-                                                style={{
-                                                  backgroundColor: group.color,
-                                                }}
-                                              ></div>
-                                              <span className="text-xs">
-                                                {group.name}
-                                              </span>
-                                            </div>
-                                          );
-                                        })()}
-                                      </SelectValue>
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="auto">
-                                        <div className="flex items-center gap-2">
-                                          <div className="w-3 h-3 rounded-full bg-gray-300"></div>
-                                          <span className="text-gray-600">
-                                            使用自动分配
+                                    <TableCell {...provided.dragHandleProps} className="w-8 cursor-move">
+                                      <div className="flex justify-center">
+                                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="text-gray-400">
+                                          <path d="M4 4h2v2H4V4zm0 6h2v2H4v-2zm0-3h2v2H4V7zm5-3h2v2H9V4zm0 6h2v2H9v-2zm0-3h2v2H9V7z" />
+                                        </svg>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="relative group">
+                                        <Input
+                                          value={allocation.purpose}
+                                          onChange={(e) =>
+                                            updateAllocation(
+                                              allocation.id,
+                                              "purpose",
+                                              e.target.value,
+                                            )
+                                          }
+                                          placeholder="输入用途"
+                                          className="w-full h-10 rounded-lg border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all bg-white dark:bg-gray-800 shadow-sm group-hover:shadow pl-2 pr-2 placeholder-gray-400"
+                                        />
+                                        {!allocation.purpose && (
+                                          <div className="absolute inset-y-0 left-2 flex items-center pointer-events-none text-gray-400">
+                                            <TagIcon className="h-4 w-4 opacity-70" />
+                                          </div>
+                                        )}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="relative group">
+                                        <div className="absolute inset-y-0 left-2 flex items-center pointer-events-none z-10">
+                                          <span className="text-gray-500 dark:text-gray-400">
+                                            ¥
                                           </span>
                                         </div>
-                                      </SelectItem>
-                                      {activeTemplate &&
-                                        TEMPLATE_GROUPS[activeTemplate].map(
-                                          (group) => (
-                                            <SelectItem
-                                              key={group.id}
-                                              value={group.id}
-                                            >
-                                              <div className="flex items-center gap-2">
-                                                <div
-                                                  className="w-3 h-3 rounded-full"
-                                                  style={{
-                                                    backgroundColor:
-                                                      group.color,
-                                                  }}
-                                                ></div>
-                                                {group.name}
-                                              </div>
-                                            </SelectItem>
-                                          ),
-                                        )}
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                              )}
-                            <TableCell>
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <div className="relative w-full">
-                            <Input
-                                      value={allocation.note || ""}
-                                      readOnly
-                              placeholder="添加备注"
-                                      className="w-full h-9 text-base cursor-pointer hover:bg-gray-50 truncate pr-8"
-                                    />
-                                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400">
-                                      <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        width="16"
-                                        height="16"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                      >
-                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                                      </svg>
-                                    </div>
-                                  </div>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-80 p-4">
-                                  <div className="space-y-2">
-                                    <h4 className="font-medium text-sm text-gray-500">
-                                      编辑备注
-                                    </h4>
-                                    <textarea
-                                      value={allocation.note || ""}
-                                      onChange={(e) =>
-                                        updateAllocation(
-                                          allocation.id,
-                                          "note",
-                                          e.target.value,
-                                        )
-                                      }
-                                      placeholder="在此输入详细备注"
-                                      className="w-full min-h-[100px] p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
-                                      autoFocus
-                                    />
+                                        <Input
+                                          type="text"
+                                          value={
+                                            allocation.amount
+                                              ? formatNumber(allocation.amount)
+                                              : ""
+                                          }
+                                          onChange={(e) => {
+                                            // 移除非数字字符
+                                            const numericValue = e.target.value.replace(
+                                              /[^\d]/g,
+                                              "",
+                                            );
+                                            updateAllocation(
+                                              allocation.id,
+                                              "amount",
+                                              numericValue ? Number(numericValue) : 0,
+                                            );
+                                          }}
+                                          placeholder="0"
+                                          className="pl-6 w-full h-10 rounded-lg border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all bg-white dark:bg-gray-800 shadow-sm group-hover:shadow text-base"
+                                        />
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="flex gap-1">
+                                        <Select
+                                          value={allocation.category || ""}
+                                          onValueChange={(value) =>
+                                            updateAllocation(
+                                              allocation.id,
+                                              "category",
+                                              value,
+                                            )
+                                          }
+                                        >
+                                          <SelectTrigger className="w-full h-9 border-gray-200">
+                                            <SelectValue placeholder="选择分类" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {categories.map((category) => (
+                                              <SelectItem
+                                                key={category.id}
+                                                value={category.id}
+                                              >
+                                                <div className="flex items-center gap-2">
+                                                  <div
+                                                    className="w-3 h-3 rounded-full"
+                                                    style={{
+                                                      backgroundColor: category.color,
+                                                    }}
+                                                  ></div>
+                                                  {category.name}
+                                                </div>
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </TableCell>
+                                    {activeTemplate &&
+                                      TEMPLATE_GROUPS[activeTemplate]?.length > 0 && (
+                                        <TableCell>
+                                          <Select
+                                            value={allocation.manualGroup || "auto"}
+                                            onValueChange={(value) =>
+                                              updateAllocationGroup(
+                                                allocation.id,
+                                                value,
+                                              )
+                                            }
+                                          >
+                                            <SelectTrigger className="w-full h-9 border-gray-200">
+                                              <SelectValue>
+                                                {(() => {
+                                                  const group =
+                                                    getAllocationGroup(allocation);
+                                                  if (!group)
+                                                    return (
+                                                      <span className="text-xs text-gray-400">
+                                                        未分组
+                                                      </span>
+                                                    );
 
-                                    <div className="flex justify-end gap-2 mt-2">
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() =>
+                                                  return (
+                                                    <div className="flex items-center gap-2">
+                                                      <div
+                                                        className="w-2 h-2 rounded-full"
+                                                        style={{
+                                                          backgroundColor: group.color,
+                                                        }}
+                                                      ></div>
+                                                      <span className="text-xs">
+                                                        {group.name}
+                                                      </span>
+                                                    </div>
+                                                  );
+                                                })()}
+                                              </SelectValue>
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="auto">
+                                                <span className="text-sm text-gray-500">
+                                                  自动分组
+                                                </span>
+                                              </SelectItem>
+                                              {TEMPLATE_GROUPS[
+                                                activeTemplate
+                                              ].map((group) => (
+                                                <SelectItem
+                                                  key={group.id}
+                                                  value={group.id}
+                                                >
+                                                  <div className="flex items-center gap-2">
+                                                    <div
+                                                      className="w-3 h-3 rounded-full"
+                                                      style={{
+                                                        backgroundColor: group.color,
+                                                      }}
+                                                    ></div>
+                                                    {group.name}
+                                                  </div>
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                          <Popover>
+                                            <PopoverTrigger>
+                                              <div></div>
+                                            </PopoverTrigger>
+                                            <PopoverContent></PopoverContent>
+                                          </Popover>
+                                        </TableCell>
+                                      )}
+                                    <TableCell>
+                                      <Input
+                                        value={allocation.note || ""}
+                                        onChange={(e) =>
                                           updateAllocation(
                                             allocation.id,
                                             "note",
-                                            "",
+                                            e.target.value,
                                           )
                                         }
-                                        className="text-gray-500"
-                                      >
-                                        清空
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        className="bg-blue-500 hover:bg-blue-600 text-white"
-                                        onClick={() => document.body.click()} // 关闭弹窗
-                                      >
-                                        确定
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </PopoverContent>
-                              </Popover>
-                          </TableCell>
-                            <TableCell className="w-[70px] text-center">
-                                <div className="flex items-center justify-center">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0 rounded-full hover:bg-blue-50 text-blue-500"
-                                    onClick={() => moveAllocation(allocation.id, 'up')}
-                                    disabled={currentMonthData.allocations.indexOf(allocation) === 0}
-                                    title="上移"
-                                  >
-                                    <ChevronUpIcon className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0 rounded-full hover:bg-blue-50 text-blue-500"
-                                    onClick={() => moveAllocation(allocation.id, 'down')}
-                                    disabled={currentMonthData.allocations.indexOf(allocation) === currentMonthData.allocations.length - 1}
-                                    title="下移"
-                                  >
-                                    <ChevronDownIcon className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0 rounded-full hover:bg-red-50 text-red-500"
-                                    onClick={() => removeAllocation(allocation.id)}
-                                  >
-                                    <Trash2Icon className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                          </motion.tr>
-                      ))}
-                      </AnimatePresence>
-                    </TableBody>
+                                        placeholder="添加备注"
+                                        className="w-full h-10 rounded-lg border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all bg-white dark:bg-gray-800 shadow-sm group-hover:shadow"
+                                      />
+                                    </TableCell>
+                                    <TableCell className="w-[70px] text-center">
+                                      <div className="flex items-center justify-center">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-7 w-7 p-0 rounded-full hover:bg-red-50 text-red-500"
+                                          onClick={() => removeAllocation(allocation.id)}
+                                        >
+                                          <Trash2Icon className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </Draggable>
+                            ))}
+                            {provided.placeholder}
+                          </TableBody>
+                        )}
+                      </Droppable>
+                    </DragDropContext>
                   </Table>
                 </div>
               </div>
