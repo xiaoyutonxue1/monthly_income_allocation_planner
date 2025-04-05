@@ -937,11 +937,37 @@ function App() {
   };
 
   const removeAllocation = (id: string) => {
+    const updatedAllocations = currentMonthData.allocations.filter(
+      (a) => a.id !== id,
+    );
     updateMonthData({
       ...currentMonthData,
-      allocations: currentMonthData.allocations.filter(
-        (allocation) => allocation.id !== id,
-      ),
+      allocations: updatedAllocations,
+    });
+  };
+
+  // 上下移动分配项的函数
+  const moveAllocation = (id: string, direction: 'up' | 'down') => {
+    const index = currentMonthData.allocations.findIndex(a => a.id === id);
+    if (
+      (direction === 'up' && index === 0) || 
+      (direction === 'down' && index === currentMonthData.allocations.length - 1) ||
+      index === -1
+    ) {
+      return; // 如果是第一项向上或最后一项向下移动，或者找不到该项，则不执行
+    }
+
+    const newAllocations = [...currentMonthData.allocations];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    
+    // 交换位置
+    const temp = newAllocations[index];
+    newAllocations[index] = newAllocations[targetIndex];
+    newAllocations[targetIndex] = temp;
+    
+    updateMonthData({
+      ...currentMonthData,
+      allocations: newAllocations,
     });
   };
 
@@ -1634,7 +1660,47 @@ function App() {
                                           </Button>
                                         </div>
                                       </div>
-                                     </div>
+                                    </div>
+                                    <div className="flex items-center">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 w-7 p-0 rounded-full hover:bg-gray-100"
+                                        onClick={() => {
+                                          const index = categories.findIndex((c) => c.id === category.id);
+                                          if (index > 0) {
+                                            const newCategories = [...categories];
+                                            const temp = newCategories[index];
+                                            newCategories[index] = newCategories[index - 1];
+                                            newCategories[index - 1] = temp;
+                                            saveCategories(newCategories);
+                                          }
+                                        }}
+                                        title="上移"
+                                        disabled={categories.findIndex((c) => c.id === category.id) === 0}
+                                      >
+                                        <ChevronUpIcon className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 w-7 p-0 rounded-full hover:bg-gray-100"
+                                        onClick={() => {
+                                          const index = categories.findIndex((c) => c.id === category.id);
+                                          if (index < categories.length - 1) {
+                                            const newCategories = [...categories];
+                                            const temp = newCategories[index];
+                                            newCategories[index] = newCategories[index + 1];
+                                            newCategories[index + 1] = temp;
+                                            saveCategories(newCategories);
+                                          }
+                                        }}
+                                        title="下移"
+                                        disabled={categories.findIndex((c) => c.id === category.id) === categories.length - 1}
+                                      >
+                                        <ChevronDownIcon className="h-4 w-4" />
+                                      </Button>
+                                    </div>
                                     <Button
                                       variant="outline"
                                       size="sm"
@@ -1923,34 +1989,38 @@ function App() {
                                 </PopoverContent>
                               </Popover>
                           </TableCell>
-                            <TableCell className="text-center">
-                            <Button
-                              onClick={() => removeAllocation(allocation.id)}
-                                variant="outline"
-                                size="icon"
-                                className="h-9 w-9 rounded-full bg-red-50 hover:bg-red-100 text-red-500 border-red-200 hover:border-red-300 transition-colors shadow-sm hover:shadow"
-                                title="删除此项"
-                              >
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  width="18"
-                                  height="18"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  className="flex-shrink-0"
-                                >
-                                  <path d="M3 6h18"></path>
-                                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                                  <line x1="10" y1="11" x2="10" y2="17"></line>
-                                  <line x1="14" y1="11" x2="14" y2="17"></line>
-                                </svg>
-                            </Button>
-                          </TableCell>
+                            <TableCell className="w-[70px] text-center">
+                                <div className="flex items-center justify-center">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 rounded-full hover:bg-blue-50 text-blue-500"
+                                    onClick={() => moveAllocation(allocation.id, 'up')}
+                                    disabled={currentMonthData.allocations.indexOf(allocation) === 0}
+                                    title="上移"
+                                  >
+                                    <ChevronUpIcon className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 rounded-full hover:bg-blue-50 text-blue-500"
+                                    onClick={() => moveAllocation(allocation.id, 'down')}
+                                    disabled={currentMonthData.allocations.indexOf(allocation) === currentMonthData.allocations.length - 1}
+                                    title="下移"
+                                  >
+                                    <ChevronDownIcon className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 rounded-full hover:bg-red-50 text-red-500"
+                                    onClick={() => removeAllocation(allocation.id)}
+                                  >
+                                    <Trash2Icon className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
                           </motion.tr>
                       ))}
                       </AnimatePresence>
