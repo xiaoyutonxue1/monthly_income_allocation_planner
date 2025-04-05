@@ -1475,12 +1475,49 @@ function App() {
                                 size="sm"
                                 variant="default"
                                 className="h-8 px-3 bg-gradient-to-r from-green-500 to-emerald-500 border-none text-white"
-                                onClick={addCategory}
+                                onClick={() => setIsAddingCategory(!isAddingCategory)}
                               >
                                 <PlusIcon className="h-3.5 w-3.5 mr-1" />
                                 添加
                               </Button>
                             </div>
+                            
+                            {isAddingCategory && (
+                              <div className="mt-3 p-2 bg-white dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 shadow-sm">
+                                <div className="flex flex-col gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <Input
+                                      value={newCategoryName}
+                                      onChange={(e) => setNewCategoryName(e.target.value)}
+                                      placeholder="分类名称"
+                                      className="h-9"
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <label className="text-sm text-gray-600 dark:text-gray-400 flex-shrink-0">颜色:</label>
+                                    <div className="flex gap-1 flex-wrap">
+                                      {colorPalette.map((color) => (
+                                        <div 
+                                          key={color} 
+                                          className={`w-6 h-6 rounded-full cursor-pointer border-2 ${newCategoryColor === color ? 'border-blue-500' : 'border-transparent'}`}
+                                          style={{ backgroundColor: color }}
+                                          onClick={() => setNewCategoryColor(color)}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div className="flex justify-end mt-2">
+                                    <Button
+                                      size="sm"
+                                      onClick={addCategory}
+                                      className="bg-blue-500 hover:bg-blue-600 text-white"
+                                    >
+                                      确认添加
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                           <div className="max-h-[320px] overflow-y-auto p-2">
                             <div className="space-y-2 p-2">
@@ -1491,9 +1528,15 @@ function App() {
                                 >
                                   <div className="flex items-center gap-2 flex-1">
                                     <div
-                                      className="w-4 h-4 rounded-full flex-shrink-0"
+                                      className="w-4 h-4 rounded-full flex-shrink-0 cursor-pointer"
                                       style={{
                                         backgroundColor: category.color,
+                                      }}
+                                      onClick={() => {
+                                        const colors = document.getElementById(`colors-${category.id}`);
+                                        if (colors) {
+                                          colors.style.display = colors.style.display === 'none' ? 'flex' : 'none';
+                                        }
                                       }}
                                     ></div>
                                     <input
@@ -1513,15 +1556,43 @@ function App() {
                                       className="text-sm border-none bg-transparent focus:outline-none focus:ring-1 focus:ring-green-500 px-1 py-0.5 rounded flex-1"
                                     />
                                   </div>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7 w-7 p-0 rounded-full bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center border-red-100"
-                                    onClick={() => removeCategory(category.id)}
-                                    title="删除此分类"
-                                  >
-                                    <Trash2Icon className="h-4 w-4" />
-                                  </Button>
+                                  <div className="flex items-center gap-2">
+                                    <div 
+                                      id={`colors-${category.id}`} 
+                                      className="hidden flex-wrap gap-1 p-1 bg-gray-50 dark:bg-gray-900 rounded-md absolute z-10 shadow-lg border border-gray-200 dark:border-gray-700"
+                                      style={{ display: 'none' }}
+                                    >
+                                      {colorPalette.map((color) => (
+                                        <div 
+                                          key={color} 
+                                          className="w-5 h-5 rounded-full cursor-pointer"
+                                          style={{ backgroundColor: color }}
+                                          onClick={() => {
+                                            const newCategories = [...categories];
+                                            const index = newCategories.findIndex((c) => c.id === category.id);
+                                            newCategories[index] = {
+                                              ...newCategories[index],
+                                              color,
+                                            };
+                                            saveCategories(newCategories);
+                                            const colors = document.getElementById(`colors-${category.id}`);
+                                            if (colors) {
+                                              colors.style.display = 'none';
+                                            }
+                                          }}
+                                        />
+                                      ))}
+                                    </div>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 w-7 p-0 rounded-full bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center border-red-100"
+                                      onClick={() => removeCategory(category.id)}
+                                      title="删除此分类"
+                                    >
+                                      <Trash2Icon className="h-4 w-4" />
+                                    </Button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
