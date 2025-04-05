@@ -1,0 +1,1814 @@
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { format, addMonths, subMonths } from 'date-fns';
+import { zhCN } from 'date-fns/locale';
+import { 
+  CalendarIcon, 
+  PlusIcon, 
+  Trash2Icon, 
+  WalletIcon, 
+  PiggyBankIcon, 
+  BarChart3Icon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  LayoutTemplateIcon,
+  PieChartIcon,
+  ChevronUpIcon,
+  CheckIcon,
+  PencilIcon, 
+  TrashIcon,
+  TagsIcon,
+  AlertTriangleIcon
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue,
+  SelectGroup,
+  SelectLabel
+} from '@/components/ui/select';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip as RechartsTooltip, 
+  ResponsiveContainer, 
+  PieChart, 
+  Pie, 
+  Cell, 
+  Legend 
+} from 'recharts';
+import { toast, ToastContainer } from '@/components/ui/use-toast';
+
+interface Allocation {
+  id: string;
+  purpose: string;
+  amount: number;
+  category?: string;
+  note?: string;
+}
+
+interface MonthData {
+  income: number;
+  allocations: Allocation[];
+}
+
+// 修改分类数据结构，支持层级分类
+interface Category {
+  id: string;
+  name: string;
+  color: string;
+  parentId?: string; // 父分类ID，顶级分类为undefined
+  icon?: string; // 图标名称
+  description?: string; // 分类描述
+  templateCategoryId?: string; // 所属模板类别ID
+}
+
+// 更新分类数据，添加二级分类结构
+const DEFAULT_CATEGORIES: Category[] = [
+  // 必要开支 - 主分类
+  { id: 'necessities', name: '必要开支', color: '#4f46e5', icon: 'Home' },
+  { id: 'housing', name: '住房', color: '#4f46e5', parentId: 'necessities', icon: 'Home' },
+  { id: 'utilities', name: '水电网', color: '#818cf8', parentId: 'necessities', icon: 'Zap' },
+  { id: 'groceries', name: '日常餐饮', color: '#16a34a', parentId: 'necessities', icon: 'Coffee' },
+  { id: 'transport', name: '交通', color: '#facc15', parentId: 'necessities', icon: 'Car' },
+  { id: 'healthcare', name: '医疗健康', color: '#06b6d4', parentId: 'necessities', icon: 'Stethoscope' },
+  
+  // 个人消费 - 主分类
+  { id: 'discretionary', name: '个人消费', color: '#f97316', icon: 'ShoppingBag' },
+  { id: 'dining', name: '外出就餐', color: '#f97316', parentId: 'discretionary', icon: 'UtensilsCrossed' },
+  { id: 'entertainment', name: '娱乐', color: '#f97316', parentId: 'discretionary', icon: 'Music' },
+  { id: 'shopping', name: '购物', color: '#3b82f6', parentId: 'discretionary', icon: 'ShoppingBag' },
+  { id: 'travel', name: '旅行', color: '#ec4899', parentId: 'discretionary', icon: 'Plane' },
+  
+  // 储蓄与投资 - 主分类
+  { id: 'savings', name: '储蓄与投资', color: '#6366f1', icon: 'Landmark' },
+  { id: 'emergency', name: '应急基金', color: '#6366f1', parentId: 'savings', icon: 'Shield' },
+  { id: 'retirement', name: '退休金', color: '#6366f1', parentId: 'savings', icon: 'TreePine' },
+  { id: 'investment', name: '投资', color: '#14b8a6', parentId: 'savings', icon: 'TrendingUp' },
+  
+  // 其他
+  { id: 'education', name: '教育', color: '#eab308', parentId: undefined, icon: 'GraduationCap' },
+  { id: 'gifts', name: '礼物与捐赠', color: '#ec4899', parentId: undefined, icon: 'Gift' },
+  { id: 'debt', name: '债务偿还', color: '#ef4444', parentId: undefined, icon: 'BanknoteIcon' },
+  { id: 'other', name: '其他', color: '#64748b', parentId: undefined, icon: 'MoreHorizontal' },
+];
+
+const colorPalette = [
+  '#3b82f6', // 蓝色
+  '#22c55e', // 绿色
+  '#f59e0b', // 黄色
+  '#ef4444', // 红色
+  '#8b5cf6', // 紫色
+  '#ec4899', // 粉色
+  '#06b6d4', // 青色
+  '#14b8a6', // 蓝绿色
+  '#f97316', // 橙色
+  '#6366f1', // 靛蓝色
+];
+
+// 修改模板接口，添加类别比例目标
+interface TemplateInfo {
+  title: string;
+  description: string;
+  suitableFor: string;
+  allocations: (income: number) => Allocation[];
+  categories: {
+    [key: string]: {
+      name: string; // 类别名称
+      ratio: number; // 目标比例（小数形式，如0.5表示50%）
+      color: string; // 类别颜色
+      description: string; // 类别描述
+      categoryIds: string[]; // 属于此类别的分类ID列表
+    }
+  };
+}
+
+// 修改TEMPLATES对象，添加各个模板的类别比例目标
+const TEMPLATES: { [key: string]: TemplateInfo } = {
+  '5050': {
+    title: '50/30/20法则',
+    description: '将收入分为必需品(50%)、可选项(30%)和储蓄(20%)三大类，简单实用的经典预算方法。',
+    suitableFor: '所有收入水平人群，尤其适合预算新手',
+    categories: {
+      'essential': {
+        name: '必需品',
+        ratio: 0.5,
+        color: '#4f46e5',
+        description: '50%用于必需品支出',
+        categoryIds: ['necessities', 'housing', 'utilities', 'groceries', 'transport', 'healthcare', 'debt']
+      },
+      'discretionary': {
+        name: '可选项',
+        ratio: 0.3,
+        color: '#f97316',
+        description: '30%用于提升生活品质',
+        categoryIds: ['discretionary', 'dining', 'entertainment', 'shopping', 'travel']
+      },
+      'saving': {
+        name: '储蓄与投资',
+        ratio: 0.2,
+        color: '#6366f1',
+        description: '20%用于未来财务目标',
+        categoryIds: ['savings', 'emergency', 'retirement', 'investment']
+      }
+    },
+    allocations: (income: number) => [
+      { id: crypto.randomUUID(), purpose: '基本生活(50%)', amount: income * 0.5, category: 'necessities', note: '基础生活必需品，包括住房、餐饮、基本服装等' },
+      { id: crypto.randomUUID(), purpose: '自由支配(30%)', amount: income * 0.3, category: 'discretionary', note: '个人享受和提升生活品质的支出，如娱乐、旅行等' },
+      { id: crypto.randomUUID(), purpose: '储蓄投资(20%)', amount: income * 0.2, category: 'savings', note: '长期理财增值，为退休或财务自由做准备' },
+    ]
+  },
+  
+  '6Jars': {
+    title: '六罐法则',
+    description: '将收入分为六个类别，合理分配资金并平衡当下享受与未来发展。',
+    suitableFor: '有一定收入且寻求更全面理财方案的人士',
+    categories: {
+      'necessities': {
+        name: '生活必需',
+        ratio: 0.55,
+        color: '#4f46e5',
+        description: '55%用于日常生活的必要开支',
+        categoryIds: ['necessities', 'housing', 'utilities', 'groceries', 'transport', 'healthcare']
+      },
+      'education': {
+        name: '教育投资',
+        ratio: 0.1,
+        color: '#eab308',
+        description: '10%用于自我提升和学习',
+        categoryIds: ['education']
+      },
+      'savings': {
+        name: '储蓄备用',
+        ratio: 0.1,
+        color: '#06b6d4',
+        description: '10%用于应急基金',
+        categoryIds: ['emergency']
+      },
+      'fun': {
+        name: '娱乐享受',
+        ratio: 0.1,
+        color: '#f97316',
+        description: '10%用于享受生活',
+        categoryIds: ['discretionary', 'dining', 'entertainment', 'shopping', 'travel']
+      },
+      'investment': {
+        name: '长期投资',
+        ratio: 0.1,
+        color: '#14b8a6',
+        description: '10%用于长期财富增值',
+        categoryIds: ['investment', 'retirement']
+      },
+      'give': {
+        name: '慷慨分享',
+        ratio: 0.05,
+        color: '#ec4899',
+        description: '5%用于回馈社会',
+        categoryIds: ['gifts']
+      }
+    },
+    allocations: (income: number) => [
+      { id: crypto.randomUUID(), purpose: '生活必需(55%)', amount: income * 0.55, category: 'necessities', note: '日常生活的必要开支，如住房、食品、基本服装等' },
+      { id: crypto.randomUUID(), purpose: '教育投资(10%)', amount: income * 0.1, category: 'education', note: '用于自我提升和学习的支出，包括书籍、课程等' },
+      { id: crypto.randomUUID(), purpose: '储蓄备用(10%)', amount: income * 0.1, category: 'emergency', note: '应急基金，以应对突发情况' },
+      { id: crypto.randomUUID(), purpose: '享受生活(10%)', amount: income * 0.1, category: 'discretionary', note: '提升生活品质的支出，如旅行、娱乐等' },
+      { id: crypto.randomUUID(), purpose: '长期投资(10%)', amount: income * 0.1, category: 'investment', note: '用于长期财富增值的投资' },
+      { id: crypto.randomUUID(), purpose: '慷慨捐赠(5%)', amount: income * 0.05, category: 'gifts', note: '回馈社会的慈善捐款' },
+    ]
+  },
+  
+  '707020': {
+    title: '70/20/10法则',
+    description: '简化版的预算法则，70%用于日常开支，20%储蓄，10%投资或捐赠。',
+    suitableFor: '稳定收入人群，尤其适合初次接触理财的年轻人',
+    categories: {
+      'expenses': {
+        name: '日常开支',
+        ratio: 0.7,
+        color: '#4f46e5',
+        description: '70%用于所有日常生活开支',
+        categoryIds: ['necessities', 'housing', 'utilities', 'groceries', 'transport', 'healthcare', 'discretionary', 'dining', 'entertainment', 'shopping', 'travel', 'education']
+      },
+      'savings': {
+        name: '储蓄目标',
+        ratio: 0.2,
+        color: '#06b6d4',
+        description: '20%用于短期和中期储蓄',
+        categoryIds: ['savings', 'emergency']
+      },
+      'investment': {
+        name: '投资/捐赠',
+        ratio: 0.1,
+        color: '#14b8a6',
+        description: '10%用于长期投资或回馈社会',
+        categoryIds: ['investment', 'retirement', 'gifts']
+      }
+    },
+    allocations: (income: number) => [
+      { id: crypto.randomUUID(), purpose: '生活开支(70%)', amount: income * 0.7, category: 'necessities', note: '所有日常生活开支，包括住房、食品、交通、娱乐等' },
+      { id: crypto.randomUUID(), purpose: '储蓄目标(20%)', amount: income * 0.2, category: 'savings', note: '短期和中期储蓄，包括应急基金和阶段性目标' },
+      { id: crypto.randomUUID(), purpose: '投资/捐赠(10%)', amount: income * 0.1, category: 'investment', note: '长期投资或回馈社会的捐赠支出' },
+    ]
+  },
+  
+  'zero': {
+    title: '零基预算法',
+    description: '每个月对收入进行全面规划，确保每一分钱都有明确用途，收入减去支出等于零。',
+    suitableFor: '希望对财务有严格控制的人士，适合各类收入水平',
+    categories: {
+      'necessities': {
+        name: '基本生活',
+        ratio: 0.6,
+        color: '#4f46e5',
+        description: '约60%用于基本生活开支',
+        categoryIds: ['necessities', 'housing', 'utilities', 'groceries', 'transport', 'healthcare']
+      },
+      'discretionary': {
+        name: '自由支配',
+        ratio: 0.1,
+        color: '#f97316',
+        description: '约10%用于自由支配',
+        categoryIds: ['discretionary', 'dining', 'entertainment', 'shopping', 'travel']
+      },
+      'savings': {
+        name: '储蓄投资',
+        ratio: 0.2,
+        color: '#14b8a6',
+        description: '约20%用于储蓄和投资',
+        categoryIds: ['savings', 'emergency', 'retirement', 'investment']
+      },
+      'others': {
+        name: '其他开支',
+        ratio: 0.1,
+        color: '#64748b',
+        description: '约10%用于其他开支',
+        categoryIds: ['education', 'gifts', 'debt', 'other']
+      }
+    },
+    allocations: (income: number) => [
+      // 这里使用空模板，让用户自定义填写
+      { id: crypto.randomUUID(), purpose: '', amount: 0, category: '', note: '' },
+    ]
+  }
+};
+
+const App = () => {
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [monthlyData, setMonthlyData] = useState<Record<string, MonthData>>(() => {
+    const saved = localStorage.getItem('monthlyData');
+    return saved ? JSON.parse(saved) : {};
+  });
+  const [categories, setCategories] = useState<Category[]>(() => {
+    const savedCategories = localStorage.getItem('userCategories');
+    return savedCategories ? JSON.parse(savedCategories) : DEFAULT_CATEGORIES;
+  });
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryColor, setNewCategoryColor] = useState('#3b82f6');
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [newCategoryParentId, setNewCategoryParentId] = useState<string | undefined>(undefined);
+
+  const currentMonthKey = format(selectedDate, 'yyyy-MM');
+  const currentMonthData = monthlyData[currentMonthKey] || { income: 0, allocations: [] };
+
+  const updateMonthData = (data: MonthData) => {
+    const newMonthlyData = {
+      ...monthlyData,
+      [currentMonthKey]: data,
+    };
+    setMonthlyData(newMonthlyData);
+    localStorage.setItem('monthlyData', JSON.stringify(newMonthlyData));
+  };
+
+  const handleIncomeChange = (value: string) => {
+    updateMonthData({
+      ...currentMonthData,
+      income: Number(value) || 0,
+    });
+  };
+
+  const addAllocation = () => {
+    updateMonthData({
+      ...currentMonthData,
+      allocations: [
+        ...currentMonthData.allocations,
+        {
+          id: crypto.randomUUID(),
+          purpose: '',
+          amount: 0,
+        },
+      ],
+    });
+  };
+
+  const updateAllocation = (id: string, field: keyof Allocation, value: string | number) => {
+    updateMonthData({
+      ...currentMonthData,
+      allocations: currentMonthData.allocations.map((allocation) =>
+        allocation.id === id ? { ...allocation, [field]: value } : allocation
+      ),
+    });
+  };
+
+  const removeAllocation = (id: string) => {
+    updateMonthData({
+      ...currentMonthData,
+      allocations: currentMonthData.allocations.filter((allocation) => allocation.id !== id),
+    });
+  };
+
+  const handleMonthChange = (offset: number) => {
+    setSelectedDate(offset > 0 ? addMonths(selectedDate, 1) : subMonths(selectedDate, 1));
+  };
+
+  const applyTemplate = (templateName: string) => {
+    const template = TEMPLATES[templateName];
+    if (template) {
+      // 应用模板前添加过渡效果
+      const container = document.querySelector('.allocations-table-container');
+      if (container) {
+        container.classList.add('apply-template-animation');
+        setTimeout(() => {
+          container.classList.remove('apply-template-animation');
+        }, 1000);
+      }
+      
+      const newAllocations = template.allocations(currentMonthData.income);
+      updateMonthData({
+        ...currentMonthData,
+        allocations: newAllocations
+      });
+      
+      // 显示应用成功的提示
+      toast({
+        title: `✅ 已应用"${template.title}"模板`,
+        description: `${template.description.substring(0, 60)}...`,
+        duration: 3000,
+      });
+      
+      // 设置当前使用的模板
+      setCurrentTemplate(templateName);
+    }
+  };
+
+  const calculateCategoryRatios = useCallback(() => {
+    if (!currentTemplate) return;
+    
+    const template = TEMPLATES[currentTemplate];
+    const totalIncome = currentMonthData.income;
+    
+    if (!template || !totalIncome) return;
+    
+    // 创建分类和模板类别的映射表
+    const categoryToTemplateMap: Record<string, string> = {};
+    Object.entries(template.categories).forEach(([templateCategoryId, templateCategory]) => {
+      templateCategory.categoryIds.forEach(catId => {
+        categoryToTemplateMap[catId] = templateCategoryId;
+      });
+    });
+    
+    // 更新用户分类的templateCategoryId
+    const updatedCategories = categories.map(category => {
+      // 检查该分类是否直接映射到模板类别
+      if (categoryToTemplateMap[category.id]) {
+        return {
+          ...category,
+          templateCategoryId: categoryToTemplateMap[category.id]
+        };
+      }
+      
+      // 检查该分类是否具有父分类且父分类映射到模板类别
+      if (category.parentId && categoryToTemplateMap[category.parentId]) {
+        return {
+          ...category,
+          templateCategoryId: categoryToTemplateMap[category.parentId]
+        };
+      }
+      
+      return category;
+    });
+    
+    // 保存更新后的分类
+    if (JSON.stringify(categories) !== JSON.stringify(updatedCategories)) {
+      saveCategories(updatedCategories);
+    }
+    
+    // 初始化各模板类别的实际支出金额
+    const templateCategorySpending: Record<string, number> = {};
+    Object.keys(template.categories).forEach(key => {
+      templateCategorySpending[key] = 0;
+    });
+    
+    // 累计各个分类的支出到对应的模板类别
+    currentMonthData.allocations.forEach(allocation => {
+      if (allocation.category) {
+        // 首先查找分类自身的templateCategoryId
+        const category = updatedCategories.find(c => c.id === allocation.category);
+        let templateCategoryId = category?.templateCategoryId;
+        
+        // 如果没有找到，再尝试从映射表中查找
+        if (!templateCategoryId) {
+          templateCategoryId = categoryToTemplateMap[allocation.category];
+        }
+        
+        // 如果还没找到，检查是否有父分类可映射
+        if (!templateCategoryId && category?.parentId) {
+          const parentCategory = updatedCategories.find(c => c.id === category.parentId);
+          templateCategoryId = parentCategory?.templateCategoryId || categoryToTemplateMap[category.parentId];
+        }
+        
+        if (templateCategoryId) {
+          templateCategorySpending[templateCategoryId] = 
+            (templateCategorySpending[templateCategoryId] || 0) + allocation.amount;
+        }
+      }
+    });
+    
+    // 计算实际比例并与目标比例比较
+    const newRatios: {[key: string]: {actual: number, target: number, name: string, color: string}} = {};
+    
+    Object.entries(template.categories).forEach(([templateCategoryId, templateCategory]) => {
+      const actualSpending = templateCategorySpending[templateCategoryId] || 0;
+      const actualRatio = totalIncome > 0 ? actualSpending / totalIncome : 0;
+      
+      newRatios[templateCategoryId] = {
+        actual: actualRatio,
+        target: templateCategory.ratio,
+        name: templateCategory.name,
+        color: templateCategory.color
+      };
+    });
+    
+    setCategoryRatios(newRatios);
+  }, [currentMonthData, currentTemplate, categories, saveCategories]);
+
+  useEffect(() => {
+    calculateCategoryRatios();
+  }, [calculateCategoryRatios]);
+
+  const totalAllocated = currentMonthData.allocations.reduce(
+    (sum, allocation) => sum + allocation.amount,
+    0
+  );
+  const balance = currentMonthData.income - totalAllocated;
+
+  const totalBalance = Object.values(monthlyData).reduce(
+    (sum, data) => sum + (data.income - data.allocations.reduce((a, b) => a + b.amount, 0)),
+    0
+  );
+
+  // 为图表准备数据
+  const monthlyBalanceData = Object.entries(monthlyData)
+    .map(([month, data]) => {
+      const monthBalance = data.income - data.allocations.reduce((sum, alloc) => sum + alloc.amount, 0);
+      return {
+        month: format(new Date(month + '-01'), 'yyyy年MM月'),
+        balance: monthBalance,
+      };
+    })
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .slice(-6); // 只显示最近6个月
+
+  // 更新categoryData计算，考虑层级分类
+  const categoryData = useMemo(() => {
+    // 创建分类映射以便快速查找
+    const categoryMap = new Map<string, Category>();
+    categories.forEach(cat => categoryMap.set(cat.id, cat));
+    
+    // 按主分类聚合支出
+    const mainCategories = new Map<string, number>();
+    
+    currentMonthData.allocations.forEach(alloc => {
+      if (alloc.category) {
+        const category = categoryMap.get(alloc.category);
+        if (category) {
+          // 找到主分类ID
+          const mainCategoryId = category.parentId || category.id;
+          const currentAmount = mainCategories.get(mainCategoryId) || 0;
+          mainCategories.set(mainCategoryId, currentAmount + alloc.amount);
+        }
+      }
+    });
+    
+    // 转换为图表数据
+    return Array.from(mainCategories.entries())
+      .map(([categoryId, amount]) => {
+        const category = categoryMap.get(categoryId);
+        return {
+          name: category?.name || '未分类',
+          value: amount,
+          color: category?.color || '#888',
+        };
+      })
+      .filter(item => item.value > 0);
+  }, [currentMonthData.allocations, categories]);
+
+  const editCategory = (categoryId: string) => {
+    const category = categories.find(cat => cat.id === categoryId);
+    if (category) {
+      setEditingCategoryId(categoryId);
+      setNewCategoryName(category.name);
+      setNewCategoryColor(category.color);
+      setNewCategoryParentId(category.parentId);
+      setIsAddingCategory(true);
+    }
+  };
+
+  const addCategory = () => {
+    if (!newCategoryName.trim()) return;
+    
+    let updatedCategories;
+    
+    if (editingCategoryId) {
+      // 更新现有分类
+      updatedCategories = categories.map(cat => 
+        cat.id === editingCategoryId 
+          ? { 
+              ...cat, 
+              name: newCategoryName.trim(), 
+              color: newCategoryColor,
+              parentId: newCategoryParentId 
+            } 
+          : cat
+      );
+      setEditingCategoryId(null);
+    } else {
+      // 添加新分类
+      const newId = `custom_${Date.now()}`;
+      const newCategory: Category = {
+        id: newId,
+        name: newCategoryName.trim(),
+        color: newCategoryColor,
+        parentId: newCategoryParentId
+      };
+      
+      updatedCategories = [...categories, newCategory];
+    }
+    
+    saveCategories(updatedCategories);
+    setNewCategoryName('');
+    setNewCategoryColor('#3b82f6');
+    setNewCategoryParentId(undefined);
+    setIsAddingCategory(false);
+  };
+
+  const saveCategories = (updatedCategories: Category[]) => {
+    setCategories(updatedCategories);
+    localStorage.setItem('userCategories', JSON.stringify(updatedCategories));
+  };
+
+  const removeCategory = (categoryId: string) => {
+    // 删除此分类及其所有子分类
+    const idsToRemove = new Set<string>();
+    idsToRemove.add(categoryId);
+    
+    // 找出所有子分类
+    let foundMore = true;
+    while (foundMore) {
+      foundMore = false;
+      categories.forEach(cat => {
+        if (cat.parentId && idsToRemove.has(cat.parentId) && !idsToRemove.has(cat.id)) {
+          idsToRemove.add(cat.id);
+          foundMore = true;
+        }
+      });
+    }
+    
+    const updatedCategories = categories.filter(cat => !idsToRemove.has(cat.id));
+    saveCategories(updatedCategories);
+    
+    // 更新当前月数据，将已删除的分类设为未分类
+    const updatedAllocations = currentMonthData.allocations.map(alloc => {
+      if (alloc.category && idsToRemove.has(alloc.category)) {
+        return { ...alloc, category: 'other' };
+      }
+      return alloc;
+    });
+    
+    updateMonthData({
+      ...currentMonthData,
+      allocations: updatedAllocations
+    });
+  };
+
+  useEffect(() => {
+    const handleCategorySelection = (value: string, allocationId: string) => {
+      if (value === 'manage_categories') {
+        setIsAddingCategory(true);
+        const allocation = currentMonthData.allocations.find(a => a.id === allocationId);
+        if (allocation) {
+          updateAllocation(allocationId, 'category', allocation.category || '');
+        }
+      }
+    };
+  }, []);
+
+  // 添加分类管理界面
+  const CategoryManager = () => {
+    // 获取分类的预算类别名称
+    const getCategoryTemplateName = (categoryId: string) => {
+      if (!currentTemplate) return null;
+      
+      const category = categories.find(c => c.id === categoryId);
+      if (!category || !category.templateCategoryId) return null;
+      
+      const template = TEMPLATES[currentTemplate];
+      if (!template) return null;
+      
+      return template.categories[category.templateCategoryId]?.name;
+    };
+    
+    return (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium">分类管理</h2>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => {
+                setEditingCategoryId(null);
+                setNewCategoryName('');
+                setNewCategoryColor('#3b82f6');
+                setNewCategoryParentId(undefined);
+                setIsAddingCategory(true);
+              }}
+              className="flex items-center"
+            >
+              <PlusIcon className="mr-1 h-4 w-4" />
+              添加分类
+            </Button>
+          </div>
+          
+          {isAddingCategory && (
+            <Card className="p-4">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">分类名称</label>
+                  <Input 
+                    value={newCategoryName} 
+                    onChange={e => setNewCategoryName(e.target.value)}
+                    placeholder="输入分类名称"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">上级分类</label>
+                  <Select 
+                    value={newCategoryParentId || ''} 
+                    onValueChange={(value) => setNewCategoryParentId(value ? value : undefined)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择上级分类（可选）" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">无上级分类（主分类）</SelectItem>
+                      {categories
+                        .filter(cat => !cat.parentId) // 只显示主分类作为可选上级
+                        .map(category => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                            {currentTemplate && category.templateCategoryId && (
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                ({TEMPLATES[currentTemplate].categories[category.templateCategoryId]?.name})
+                              </span>
+                            )}
+                          </SelectItem>
+                        ))
+                      }
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">分类颜色</label>
+                  <div className="flex items-center space-x-2">
+                    <div 
+                      className="w-8 h-8 rounded-full border"
+                      style={{ backgroundColor: newCategoryColor }}
+                    />
+                    <Input 
+                      type="color"
+                      value={newCategoryColor}
+                      onChange={e => setNewCategoryColor(e.target.value)}
+                      className="w-16 h-8"
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex justify-end space-x-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setIsAddingCategory(false);
+                      setEditingCategoryId(null);
+                    }}
+                  >
+                    取消
+                  </Button>
+                  <Button onClick={addCategory}>
+                    {editingCategoryId ? '更新' : '添加'}
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+          
+          <div className="space-y-4">
+            {/* 显示主分类及其子分类 */}
+            {categories
+              .filter(cat => !cat.parentId) // 先获取所有主分类
+              .map(mainCategory => (
+                <Card key={mainCategory.id} className="overflow-hidden">
+                  <div className="p-4 flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div 
+                        className="w-4 h-4 mr-2 rounded-full" 
+                        style={{ backgroundColor: mainCategory.color }}
+                      />
+                      <span className="font-medium">{mainCategory.name}</span>
+                      {currentTemplate && mainCategory.templateCategoryId && (
+                        <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                          {TEMPLATES[currentTemplate].categories[mainCategory.templateCategoryId]?.name}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => editCategory(mainCategory.id)}
+                      >
+                        <PencilIcon className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => {
+                          if (window.confirm(`确定要删除 "${mainCategory.name}" 分类吗？这将同时删除其下的所有子分类。`)) {
+                            removeCategory(mainCategory.id);
+                          }
+                        }}
+                      >
+                        <TrashIcon className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="border-t">
+                    {categories
+                      .filter(cat => cat.parentId === mainCategory.id) // 获取此主分类的所有子分类
+                      .map(subCategory => (
+                        <div 
+                          key={subCategory.id} 
+                          className="p-2 pl-6 flex items-center justify-between hover:bg-gray-50"
+                        >
+                          <div className="flex items-center">
+                            <div 
+                              className="w-3 h-3 mr-2 rounded-full" 
+                              style={{ backgroundColor: subCategory.color }}
+                            />
+                            <span>{subCategory.name}</span>
+                            {currentTemplate && subCategory.templateCategoryId && (
+                              <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                                {TEMPLATES[currentTemplate].categories[subCategory.templateCategoryId]?.name}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => editCategory(subCategory.id)}
+                            >
+                              <PencilIcon className="h-3 w-3" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => {
+                                if (window.confirm(`确定要删除 "${subCategory.name}" 吗？`)) {
+                                  removeCategory(subCategory.id);
+                                }
+                              }}
+                            >
+                              <TrashIcon className="h-3 w-3 text-red-500" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    }
+                  </div>
+                </Card>
+              ))
+            }
+
+            {/* 无上级分类的独立分类 */}
+            <Card>
+              <div className="p-4">
+                <h3 className="font-medium mb-2">独立分类</h3>
+                {categories
+                  .filter(cat => !cat.parentId && !categories.some(c => c.parentId === cat.id))
+                  .filter(cat => !['necessities', 'discretionary', 'savings'].includes(cat.id))
+                  .map(category => (
+                    <div 
+                      key={category.id} 
+                      className="py-2 flex items-center justify-between"
+                    >
+                      <div className="flex items-center">
+                        <div 
+                          className="w-4 h-4 mr-2 rounded-full" 
+                          style={{ backgroundColor: category.color }}
+                        />
+                        <span>{category.name}</span>
+                        {currentTemplate && category.templateCategoryId && (
+                          <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                            {TEMPLATES[currentTemplate].categories[category.templateCategoryId]?.name}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => editCategory(category.id)}
+                        >
+                          <PencilIcon className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => {
+                            if (window.confirm(`确定要删除 "${category.name}" 吗？`)) {
+                              removeCategory(category.id);
+                            }
+                          }}
+                        >
+                          <TrashIcon className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            </Card>
+          </div>
+        </div>
+      );
+  };
+
+  // 修改分类选择器组件，使其支持层级分类
+  const CategoryPicker = ({ value, onChange }: { value: string, onChange: (value: string) => void }) => {
+    // 获取选中分类的完整路径名（如果是子分类，则显示"主分类 > 子分类"）
+    const getDisplayName = (categoryId: string) => {
+      const category = categories.find(c => c.id === categoryId);
+      if (!category) return '未分类';
+      
+      if (category.parentId) {
+        const parent = categories.find(c => c.id === category.parentId);
+        if (parent) {
+          return `${parent.name} > ${category.name}`;
+        }
+      }
+      
+      return category.name;
+    };
+    
+    // 获取分类的预算类别标识
+    const getTemplateCategoryTag = (categoryId: string) => {
+      if (!currentTemplate) return null;
+      
+      const category = categories.find(c => c.id === categoryId);
+      if (!category || !category.templateCategoryId) return null;
+      
+      const template = TEMPLATES[currentTemplate];
+      if (!template) return null;
+      
+      const templateCategory = template.categories[category.templateCategoryId];
+      if (!templateCategory) return null;
+      
+      return (
+        <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600">
+          {templateCategory.name}
+        </span>
+      );
+    };
+    
+    return (
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger>
+          <SelectValue placeholder="选择分类" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {/* 循环显示主分类及其子分类 */}
+            {categories
+              .filter(cat => !cat.parentId) // 主分类
+              .map(mainCategory => {
+                const subCategories = categories.filter(c => c.parentId === mainCategory.id);
+                
+                // 如果有子分类，则显示分组
+                if (subCategories.length > 0) {
+                  return (
+                    <div key={mainCategory.id}>
+                      <SelectLabel className="font-medium">
+                        {mainCategory.name}
+                        {currentTemplate && mainCategory.templateCategoryId && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            ({TEMPLATES[currentTemplate].categories[mainCategory.templateCategoryId]?.name})
+                          </span>
+                        )}
+                      </SelectLabel>
+                      {subCategories.map(subCategory => (
+                        <SelectItem 
+                          key={subCategory.id} 
+                          value={subCategory.id}
+                          className="pl-6"
+                        >
+                          <div className="flex items-center">
+                            <div 
+                              className="w-2 h-2 mr-2 rounded-full" 
+                              style={{ backgroundColor: subCategory.color }}
+                            />
+                            {subCategory.name}
+                            {getTemplateCategoryTag(subCategory.id)}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </div>
+                  );
+                }
+                
+                // 如果没有子分类，则显示主分类本身
+                return (
+                  <SelectItem key={mainCategory.id} value={mainCategory.id}>
+                    <div className="flex items-center">
+                      <div 
+                        className="w-2 h-2 mr-2 rounded-full" 
+                        style={{ backgroundColor: mainCategory.color }}
+                      />
+                      {mainCategory.name}
+                      {getTemplateCategoryTag(mainCategory.id)}
+                    </div>
+                  </SelectItem>
+                );
+              })
+            }
+            
+            {/* 独立分类 */}
+            <SelectLabel className="font-medium mt-2">
+              其他分类
+            </SelectLabel>
+            {categories
+              .filter(cat => !cat.parentId && !categories.some(c => c.parentId === cat.id))
+              .filter(cat => !['necessities', 'discretionary', 'savings'].includes(cat.id))
+              .map(category => (
+                <SelectItem key={category.id} value={category.id}>
+                  <div className="flex items-center">
+                    <div 
+                      className="w-2 h-2 mr-2 rounded-full" 
+                      style={{ backgroundColor: category.color }}
+                    />
+                    {category.name}
+                    {getTemplateCategoryTag(category.id)}
+                  </div>
+                </SelectItem>
+              ))
+            }
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    );
+  };
+
+  // 添加分类管理的标签页选项
+  const [activeTab, setActiveTab] = useState<'budget' | 'reports' | 'categories' | 'templates'>('budget');
+  
+  // 添加当前模板类别支出比例追踪
+  const [currentTemplate, setCurrentTemplate] = useState<string | null>(null);
+  const [categoryRatios, setCategoryRatios] = useState<{[key: string]: {actual: number, target: number, name: string, color: string}}>({});
+
+  // 创建预算类别比例展示组件
+  const CategoryRatioCard = ({ templateCategoryId, data }: { 
+    templateCategoryId: string; 
+    data: {actual: number, target: number, name: string, color: string}
+  }) => {
+    const { actual, target, name, color } = data;
+    const percentage = Math.round(actual * 100);
+    const targetPercentage = Math.round(target * 100);
+    const isOverBudget = actual > target;
+    
+    return (
+      <Card className={cn(
+        "overflow-hidden",
+        isOverBudget ? "border-red-400" : "border-gray-200"
+      )}>
+        <CardHeader className="p-3 pb-2">
+          <div className="flex justify-between items-center">
+            <CardTitle className="text-sm font-medium">{name}</CardTitle>
+            <div 
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: color }}
+            />
+          </div>
+        </CardHeader>
+        <CardContent className="p-3 pt-0 space-y-2">
+          <div className="w-full bg-gray-100 rounded-full h-2.5">
+            <div 
+              className={cn(
+                "h-2.5 rounded-full", 
+                isOverBudget ? "bg-red-500" : "bg-blue-500"
+              )} 
+              style={{ width: `${Math.min(percentage, 100)}%` }}
+            ></div>
+          </div>
+          
+          <div className="flex justify-between text-xs">
+            <div className="flex items-center gap-1">
+              <span>当前:</span>
+              <span className={cn(
+                "font-medium", 
+                isOverBudget ? "text-red-500" : "text-blue-600"
+              )}>
+                {percentage}%
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span>目标:</span>
+              <span className="font-medium">{targetPercentage}%</span>
+            </div>
+          </div>
+          
+          {isOverBudget && (
+            <div className="text-xs text-red-500 flex items-center gap-1 mt-1">
+              <AlertTriangleIcon className="h-3 w-3" />
+              <span>超出目标 {Math.round((actual - target) * 100)}%</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  return (
+    <div className="min-h-screen w-screen overflow-x-hidden bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-sky-50 via-indigo-50 to-emerald-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-5xl mx-auto px-6 md:px-10 py-6 space-y-4"
+      >
+        <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+          <div className="flex-1">
+            <motion.h1 
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="text-4xl font-bold mb-2 bg-gradient-to-r from-indigo-600 to-blue-500 bg-clip-text text-transparent"
+            >
+              月度收入规划
+            </motion.h1>
+            <p className="text-muted-foreground">规划和追踪您的月度收入分配</p>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="icon" 
+              onClick={() => handleMonthChange(-1)}
+              className="bg-gradient-to-r from-blue-100 to-indigo-100 dark:from-blue-900 dark:to-indigo-900 shadow-md hover:shadow-lg hover:scale-105 transition-all rounded-xl h-12 w-14 flex items-center justify-center border border-blue-200 dark:border-blue-800"
+            >
+              <ChevronLeftIcon className="h-7 w-7 text-blue-600 dark:text-blue-400" />
+            </Button>
+            
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                    'w-[240px] justify-start text-left font-medium bg-white dark:bg-gray-800 shadow-md hover:shadow-lg transition-all rounded-xl h-12 border border-blue-200 dark:border-blue-800',
+                  !selectedDate && 'text-muted-foreground'
+                )}
+              >
+                  <CalendarIcon className="mr-2 h-6 w-6 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+                {selectedDate ? format(selectedDate, 'yyyy年 MM月', { locale: zhCN }) : <span>选择月份</span>}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={(date) => date && setSelectedDate(date)}
+                  defaultMonth={selectedDate}
+                locale={zhCN}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+            
+            <Button 
+              variant="outline" 
+              size="icon" 
+              onClick={() => handleMonthChange(1)}
+              className="bg-gradient-to-r from-blue-100 to-indigo-100 dark:from-blue-900 dark:to-indigo-900 shadow-md hover:shadow-lg hover:scale-105 transition-all rounded-xl h-12 w-14 flex items-center justify-center border border-blue-200 dark:border-blue-800"
+            >
+              <ChevronRightIcon className="h-7 w-7 text-blue-600 dark:text-blue-400" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+          <Card className="lg:col-span-3 shadow-lg hover:shadow-xl transition-shadow rounded-2xl border border-blue-100 dark:border-blue-900 overflow-hidden">
+            <CardHeader className="border-b">
+              <CardTitle className="flex items-center gap-2">
+                <WalletIcon className="h-5 w-5 text-blue-500" />
+                月度收入
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 md:p-6">
+              <div className="space-y-4 md:space-y-6">
+                <div>
+                  <Label htmlFor="income" className="text-lg">
+                    {format(selectedDate, 'yyyy年 MM月', { locale: zhCN })}收入
+                  </Label>
+                  <Input
+                    id="income"
+                    type="number"
+                    value={currentMonthData.income || ''}
+                    onChange={(e) => handleIncomeChange(e.target.value)}
+                    placeholder="请输入月收入"
+                    className="mt-2 h-10 text-lg"
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <PiggyBankIcon className="h-5 w-5 text-green-500" />
+                      收入分配
+                    </h3>
+                    <div className="flex gap-2">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="flex items-center gap-1 border-blue-200 dark:border-blue-800 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
+                            <LayoutTemplateIcon className="h-4 w-4 text-blue-500" />
+                            使用模板
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[700px] p-0 max-h-[600px] overflow-auto bg-white/95 backdrop-blur-sm border-blue-100 dark:border-blue-900">
+                          <div className="p-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 sticky top-0 z-10">
+                            <h4 className="font-medium text-base">选择预算模板</h4>
+                            <p className="text-sm text-muted-foreground">选择一个适合您的预算模板作为起点</p>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4">
+                            {Object.entries(TEMPLATES).map(([key, template], index) => (
+                              <motion.div 
+                                key={key} 
+                                className="relative overflow-hidden rounded-xl border border-blue-100 dark:border-blue-900 bg-white dark:bg-gray-900 hover:shadow-lg transition-all duration-300 flex flex-col h-full"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.3, delay: index * 0.1 }}
+                                whileHover={{ 
+                                  scale: 1.02, 
+                                  boxShadow: "0 10px 25px -5px rgba(59, 130, 246, 0.2), 0 10px 10px -5px rgba(59, 130, 246, 0.1)",
+                                  borderColor: "rgba(59, 130, 246, 0.5)"
+                                }}
+                              >
+                                <div className="p-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30">
+                                  <div className="flex items-start justify-between">
+                                    <h5 className="font-medium text-base">{template.title}</h5>
+                                    <motion.div 
+                                      className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300"
+                                      whileHover={{ scale: 1.05 }}
+                                    >
+                                      <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+                                      推荐
+                                    </motion.div>
+                                  </div>
+                                </div>
+                                
+                                <div className="flex-1 p-4 space-y-3">
+                                  <p className="text-sm text-muted-foreground">{template.description}</p>
+                                  
+                                  <div className="bg-blue-50 dark:bg-blue-950 rounded-lg p-2 text-xs">
+                                    <span className="text-blue-600 dark:text-blue-400 font-medium">适用人群：</span> 
+                                    <span>{template.suitableFor}</span>
+                                  </div>
+                                  
+                                  <div className="space-y-1 mt-3">
+                                    {template.allocations(1000).map((allocation, idx) => (
+                                      <div key={idx} className="flex justify-between text-xs">
+                                        <motion.div 
+                                          className="flex items-center gap-1.5"
+                                          initial={{ x: -5, opacity: 0 }}
+                                          animate={{ x: 0, opacity: 1 }}
+                                          transition={{ delay: 0.2 + idx * 0.05 }}
+                                        >
+                                          <span 
+                                            className="inline-block w-2 h-2 rounded-full" 
+                                            style={{ backgroundColor: categories.find(c => c.id === allocation.category)?.color || '#888' }}
+                                          ></span>
+                                          <span className="text-muted-foreground">{allocation.purpose}</span>
+                                        </motion.div>
+                                        <span className="font-medium">{Math.round(allocation.amount / 10)}%</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                                
+                                <div className="mt-auto p-4 pt-2 border-t border-dashed border-blue-100 dark:border-blue-900/30">
+                                  <motion.button
+                                    onClick={() => applyTemplate(key)}
+                                    className="w-full py-2 px-4 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-medium hover:from-blue-600 hover:to-indigo-600 transition-all duration-300 flex items-center justify-center gap-2"
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                  >
+                                    <CheckIcon className="h-4 w-4" />
+                                    应用此模板
+                                  </motion.button>
+                                </div>
+                              </motion.div>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                      
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="flex items-center gap-1">
+                      <PlusIcon className="h-4 w-4 mr-1" />
+                            管理分类
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-72">
+                          <div className="space-y-4">
+                            <div className="flex flex-col space-y-2">
+                              <h4 className="font-medium">添加新分类</h4>
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1">
+                                  <Input 
+                                    value={newCategoryName}
+                                    onChange={(e) => setNewCategoryName(e.target.value)}
+                                    placeholder="分类名称"
+                                    className="w-full h-9"
+                                  />
+                                </div>
+                                <div>
+                                  <input 
+                                    type="color"
+                                    value={newCategoryColor}
+                                    onChange={(e) => setNewCategoryColor(e.target.value)}
+                                    className="w-9 h-9 p-1 border rounded"
+                                  />
+                                </div>
+                                <Button 
+                                  onClick={addCategory} 
+                                  size="sm"
+                                  className="bg-green-500 hover:bg-green-600"
+                                >
+                                  添加
+                                </Button>
+                              </div>
+                            </div>
+                            
+                            <div className="max-h-[200px] overflow-y-auto">
+                              <div className="grid grid-cols-1 gap-2">
+                                {categories.map((category) => (
+                                  <div 
+                                    key={category.id} 
+                                    className="flex items-center justify-between p-2 border rounded-md"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <div 
+                                        className="w-3 h-3 rounded-full" 
+                                        style={{ backgroundColor: category.color }}
+                                      ></div>
+                                      <span>{category.name}</span>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => removeCategory(category.id)}
+                                      className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+                                      title="删除分类"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 6h18"></path>
+                                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                                      </svg>
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                      
+                      <Button onClick={addAllocation} size="sm" className="bg-green-500 hover:bg-green-600 h-9 px-3">
+                        <PlusIcon className="h-5 w-5 mr-1" />
+                      添加分配项
+                    </Button>
+                    </div>
+                  </div>
+
+                  <Table className="allocations-table-container">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>用途</TableHead>
+                        <TableHead className="w-[120px]">金额</TableHead>
+                        <TableHead className="w-[120px]">分类</TableHead>
+                        <TableHead>备注</TableHead>
+                        <TableHead className="w-[70px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <AnimatePresence>
+                      {currentMonthData.allocations.map((allocation) => (
+                          <motion.tr
+                            key={allocation.id}
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                          <TableCell>
+                            <Input
+                              value={allocation.purpose}
+                              onChange={(e) =>
+                                updateAllocation(allocation.id, 'purpose', e.target.value)
+                              }
+                              placeholder="输入用途"
+                                className="w-full h-9"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              value={allocation.amount || ''}
+                              onChange={(e) =>
+                                updateAllocation(allocation.id, 'amount', Number(e.target.value) || 0)
+                              }
+                              placeholder="0"
+                                className="w-full h-9 text-base"
+                            />
+                          </TableCell>
+                          <TableCell>
+                              <CategoryPicker
+                                value={allocation.category || ''}
+                                onChange={(value) => updateAllocation(allocation.id, 'category', value)}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <div className="relative w-full">
+                            <Input
+                              value={allocation.note || ''}
+                                      readOnly
+                              placeholder="添加备注"
+                                      className="w-full h-9 text-base cursor-pointer hover:bg-gray-50 truncate pr-8"
+                                    />
+                                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400">
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                      </svg>
+                                    </div>
+                                  </div>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-80 p-4">
+                                  <div className="space-y-2">
+                                    <h4 className="font-medium text-sm text-gray-500">编辑备注</h4>
+                                    <textarea
+                                      value={allocation.note || ''}
+                                      onChange={(e) => updateAllocation(allocation.id, 'note', e.target.value)}
+                                      placeholder="在此输入详细备注"
+                                      className="w-full min-h-[100px] p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
+                                      autoFocus
+                                    />
+                                    
+                                    <div className="flex justify-end gap-2 mt-2">
+                                      <Button 
+                                        variant="outline" 
+                                        size="sm"
+                                        onClick={() => updateAllocation(allocation.id, 'note', '')}
+                                        className="text-gray-500"
+                                      >
+                                        清空
+                                      </Button>
+                                      <Button 
+                                        size="sm"
+                                        className="bg-blue-500 hover:bg-blue-600 text-white"
+                                        onClick={() => document.body.click()} // 关闭弹窗
+                                      >
+                                        确定
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                                size="sm"
+                              onClick={() => removeAllocation(allocation.id)}
+                                className="w-full h-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors rounded-md"
+                                title="删除"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                                  <path d="M3 6h18"></path>
+                                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                                  <line x1="10" y1="11" x2="10" y2="17"></line>
+                                  <line x1="14" y1="11" x2="14" y2="17"></line>
+                                </svg>
+                            </Button>
+                          </TableCell>
+                          </motion.tr>
+                      ))}
+                      </AnimatePresence>
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="space-y-4">
+            <Card className={cn(
+              'shadow-lg transition-all transform hover:scale-102 rounded-2xl overflow-hidden',
+              balance >= 0 ? 'border-green-500' : 'border-red-500',
+              'border-2'
+            )}>
+              <CardHeader className="border-b">
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3Icon className="h-5 w-5 text-blue-500" />
+                  月度结余
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 md:p-6">
+                <div className="space-y-4">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">收入：</span>
+                    <span>￥{currentMonthData.income.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">已分配：</span>
+                    <span>￥{totalAllocated.toLocaleString()}</span>
+                  </div>
+                  <div className="h-px bg-border my-2" />
+                  <div className="flex justify-between font-semibold text-lg">
+                    <span>结余：</span>
+                    <motion.span 
+                      key={balance}
+                      initial={{ scale: 1.2 }}
+                      animate={{ scale: 1 }}
+                      className={balance >= 0 ? 'text-green-600' : 'text-red-600'}
+                    >
+                      ￥{balance.toLocaleString()}
+                    </motion.span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-lg hover:shadow-xl transition-shadow rounded-2xl border border-blue-100 dark:border-blue-900 overflow-hidden">
+              <CardHeader className="border-b">
+                <CardTitle className="flex items-center gap-2">
+                  <PiggyBankIcon className="h-5 w-5 text-green-500" />
+                  总结余
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 md:p-6">
+                <div className="text-3xl font-bold text-center text-green-600">
+                  <motion.div
+                    key={totalBalance}
+                    initial={{ scale: 1.1 }}
+                    animate={{ scale: 1 }}
+                  >
+                  ￥{totalBalance.toLocaleString()}
+                  </motion.div>
+                </div>
+                <p className="text-center text-muted-foreground text-sm mt-2">
+                  所有月份累计结余
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* 月度结余趋势图 */}
+          <Card className="shadow-lg h-full rounded-2xl border border-blue-100 dark:border-blue-900 overflow-hidden hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-white to-blue-50 dark:from-gray-800 dark:to-gray-900">
+            <CardHeader className="border-b bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3Icon className="h-5 w-5 text-emerald-500" />
+                最近月度结余趋势
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 md:p-6">
+              {monthlyBalanceData.length > 0 ? (
+                <div className="w-full h-72 md:h-96">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={monthlyBalanceData}
+                      margin={{ top: 15, right: 20, left: 20, bottom: 30 }}
+                    >
+                      <defs>
+                        <linearGradient id="positiveBalance" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#10b981" stopOpacity={0.9}/>
+                          <stop offset="100%" stopColor="#10b981" stopOpacity={0.6}/>
+                        </linearGradient>
+                        <linearGradient id="negativeBalance" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#ef4444" stopOpacity={0.9}/>
+                          <stop offset="100%" stopColor="#ef4444" stopOpacity={0.6}/>
+                        </linearGradient>
+                        <filter id="shadow" height="130%">
+                          <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#00000020"/>
+                        </filter>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.3} vertical={false} />
+                      <XAxis 
+                        dataKey="month" 
+                        angle={-30} 
+                        textAnchor="end" 
+                        height={60}
+                        tick={{ fontSize: 12, fill: '#6b7280' }}
+                        axisLine={{ stroke: '#e5e7eb' }}
+                        tickLine={{ stroke: '#e5e7eb' }}
+                      />
+                      <YAxis 
+                        tick={{ fontSize: 12, fill: '#6b7280' }}
+                        axisLine={{ stroke: '#e5e7eb' }}
+                        tickLine={{ stroke: '#e5e7eb' }}
+                        tickFormatter={(value) => `¥${Math.abs(value) >= 1000 ? Math.abs(value)/1000 + 'k' : Math.abs(value)}`}
+                      />
+                      <RechartsTooltip 
+                        formatter={(value) => [`￥${Number(value).toLocaleString()}`, '结余']} 
+                        contentStyle={{ 
+                          backgroundColor: 'rgba(255, 255, 255, 0.9)', 
+                          borderRadius: '8px', 
+                          border: 'none', 
+                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' 
+                        }}
+                        labelStyle={{ fontWeight: 'bold', color: '#374151' }}
+                        itemStyle={{ color: '#1f2937' }}
+                        cursor={{ fill: 'rgba(0, 0, 0, 0.05)' }}
+                      />
+                      <Bar 
+                        dataKey="balance" 
+                        name="结余" 
+                        fill="#000000"
+                        animationDuration={1500}
+                        animationEasing="ease-out"
+                        radius={[6, 6, 0, 0]}
+                        filter="url(#shadow)"
+                        isAnimationActive={true}
+                      >
+                        {monthlyBalanceData.map((entry, index) => (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            cursor="pointer"
+                            fill={entry.balance >= 0 ? '#10b981' : '#f43f5e'}
+                            strokeWidth={0}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-64 text-muted-foreground rounded-xl border border-dashed border-gray-200 p-6">
+                  <BarChart3Icon className="h-12 w-12 text-gray-300 mb-2" />
+                  <p>暂无历史数据</p>
+                  <p className="text-sm text-gray-400 mt-1">添加月度收入和分配后将在此显示趋势图</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 当月支出分类占比 */}
+          <Card className="shadow-lg rounded-2xl border border-blue-100 dark:border-blue-900 overflow-hidden hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-white to-blue-50 dark:from-gray-800 dark:to-gray-900">
+            <CardHeader className="border-b bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
+              <CardTitle className="flex items-center gap-2">
+                <PieChartIcon className="h-5 w-5 text-blue-500" />
+                当月分配分类占比
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 md:p-6">
+              {categoryData.length > 0 ? (
+                <div className="w-full h-72 md:h-96">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <defs>
+                        <filter id="pieShadow" height="130%">
+                          <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#00000020"/>
+                        </filter>
+                      </defs>
+                      <Pie
+                        data={categoryData}
+                        cx="50%"
+                        cy="45%"
+                        labelLine={{
+                          stroke: '#d1d5db',
+                          strokeWidth: 1,
+                          strokeDasharray: '2 2',
+                        }}
+                        label={({ name, percent }) => (
+                          `${name} ${(percent * 100).toFixed(0)}%`
+                        )}
+                        outerRadius={90}
+                        innerRadius={30}
+                        paddingAngle={2}
+                        fill="#8884d8"
+                        dataKey="value"
+                        animationDuration={1500}
+                        animationEasing="ease-out"
+                        filter="url(#pieShadow)"
+                        isAnimationActive={true}
+                      >
+                        {categoryData.map((entry, index) => (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={entry.color || colorPalette[index % colorPalette.length]}
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                          />
+                        ))}
+                      </Pie>
+                      <Legend 
+                        layout="horizontal" 
+                        verticalAlign="bottom" 
+                        align="center"
+                        wrapperStyle={{ paddingTop: '20px' }}
+                        iconType="circle"
+                        iconSize={10}
+                      />
+                      <RechartsTooltip 
+                        formatter={(value) => [`￥${Number(value).toLocaleString()}`]} 
+                        contentStyle={{ 
+                          backgroundColor: 'rgba(255, 255, 255, 0.9)', 
+                          borderRadius: '8px', 
+                          border: 'none', 
+                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' 
+                        }}
+                        labelStyle={{ fontWeight: 'bold', color: '#374151' }}
+                        itemStyle={{ color: '#1f2937' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-64 text-muted-foreground rounded-xl border border-dashed border-gray-200 p-6">
+                  <PieChartIcon className="h-12 w-12 text-gray-300 mb-2" />
+                  <p>暂无分类数据</p>
+                  <p className="text-sm text-gray-400 mt-1">添加收入分配分类后将在此显示饼图</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 添加模板比例展示区域 */}
+        {currentTemplate && Object.keys(categoryRatios).length > 0 && (
+          <Card className="shadow-md">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <PieChartIcon className="h-5 w-5 text-blue-500" />
+                预算类别支出比例
+                <span className="text-sm font-normal text-muted-foreground">
+                  (已应用 {TEMPLATES[currentTemplate].title})
+                </span>
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">查看各预算类别的支出比例与目标比例对比</p>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Object.entries(categoryRatios).map(([categoryId, data]) => (
+                  <CategoryRatioCard 
+                    key={categoryId}
+                    templateCategoryId={categoryId}
+                    data={data}
+                  />
+                ))}
+              </div>
+              
+              {Object.values(categoryRatios).some(ratio => ratio.actual > ratio.target) && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                  <div className="flex items-center gap-2 text-red-600">
+                    <AlertTriangleIcon className="h-5 w-5" />
+                    <span className="font-medium">注意: 某些类别支出超出了目标比例</span>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">
+                    建议调整支出分配，使各类别支出比例符合所选模板的推荐值。
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {Object.entries(categoryRatios)
+                      .filter(([_, data]) => data.actual > data.target)
+                      .map(([categoryId, data]) => {
+                        const template = TEMPLATES[currentTemplate];
+                        const categoryInfo = template.categories[categoryId];
+                        const overage = Math.round((data.actual - data.target) * 100);
+                        const excessAmount = Math.round(overage / 100 * currentMonthData.income);
+                        
+                        return (
+                          <div key={categoryId} className="text-sm p-2 bg-white border border-red-100 rounded flex items-start gap-2">
+                            <div 
+                              className="w-3 h-3 rounded-full mt-1 flex-shrink-0" 
+                              style={{ backgroundColor: data.color }}
+                            />
+                            <div>
+                              <div className="font-medium text-gray-800">{data.name} 超出 {overage}%</div>
+                              <div className="text-xs text-gray-600">
+                                约 ¥{excessAmount.toLocaleString()} 超出预算
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                建议分类: {categoryInfo.categoryIds.map(id => {
+                                  const cat = categories.find(c => c.id === id);
+                                  return cat?.name;
+                                }).filter(Boolean).join(', ')}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    }
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </motion.div>
+
+    {/* 回到顶部按钮 */}
+    <motion.button
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      whileHover={{ scale: 1.1 }}
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      className="fixed bottom-6 right-6 p-3 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-full shadow-lg hover:shadow-xl z-50 border border-blue-300"
+      aria-label="回到顶部"
+    >
+      <ChevronUpIcon className="h-5 w-5" />
+    </motion.button>
+    
+    {/* 添加Toast容器 */}
+    <ToastContainer />
+  </div>
+);
+
+export default App;
