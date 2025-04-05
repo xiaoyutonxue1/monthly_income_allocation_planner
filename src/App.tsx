@@ -1506,6 +1506,25 @@ function App() {
                                       ))}
                                     </div>
                                   </div>
+                                  <div className="flex items-center gap-2">
+                                    <label className="text-sm text-gray-600 dark:text-gray-400 flex-shrink-0">自定义:</label>
+                                    <Input
+                                      type="text"
+                                      value={newCategoryColor.startsWith('#') ? newCategoryColor : `#${newCategoryColor}`}
+                                      onChange={(e) => {
+                                        const value = e.target.value;
+                                        // 确保值以#开头
+                                        const colorValue = value.startsWith('#') ? value : `#${value}`;
+                                        setNewCategoryColor(colorValue);
+                                      }}
+                                      placeholder="#000000"
+                                      className="h-9 w-32"
+                                    />
+                                    <div 
+                                      className="w-6 h-6 rounded-full border border-gray-200"
+                                      style={{ backgroundColor: newCategoryColor }}
+                                    />
+                                  </div>
                                   <div className="flex justify-end mt-2">
                                     <Button
                                       size="sm"
@@ -1582,6 +1601,28 @@ function App() {
                                           }}
                                         />
                                       ))}
+                                      <div className="w-full mt-1 px-1 flex items-center gap-1">
+                                        <Input
+                                          type="text"
+                                          defaultValue={category.color}
+                                          placeholder="#000000"
+                                          className="h-7 text-xs"
+                                          onChange={(e) => {
+                                            const color = e.target.value;
+                                            const newCategories = [...categories];
+                                            const index = newCategories.findIndex((c) => c.id === category.id);
+                                            newCategories[index] = {
+                                              ...newCategories[index],
+                                              color,
+                                            };
+                                            saveCategories(newCategories);
+                                          }}
+                                        />
+                                        <div 
+                                          className="w-5 h-5 rounded-full border border-gray-200"
+                                          style={{ backgroundColor: category.color }}
+                                        />
+                                      </div>
                                     </div>
                                     <Button
                                       variant="outline"
