@@ -102,6 +102,7 @@ import { useNavigate } from "react-router-dom";
 import { BudgetProgressBar } from "./progress-bar";
 import { CopyIcon, HamburgerMenuIcon, MagnifyingGlassIcon, Cross2Icon, StarIcon, PlusCircledIcon, RocketIcon, PersonIcon } from "@radix-ui/react-icons";
 import { ChevronDownIcon, ExclamationTriangleIcon, FileTextIcon, BookmarkIcon, BellIcon, InfoCircledIcon } from "@radix-ui/react-icons";
+import { HexColorPicker } from "react-colorful";
 
 interface Allocation {
   id: string;
@@ -1506,24 +1507,26 @@ function App() {
                                       ))}
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-2">
-                                    <label className="text-sm text-gray-600 dark:text-gray-400 flex-shrink-0">自定义:</label>
-                                    <Input
-                                      type="text"
-                                      value={newCategoryColor.startsWith('#') ? newCategoryColor : `#${newCategoryColor}`}
-                                      onChange={(e) => {
-                                        const value = e.target.value;
-                                        // 确保值以#开头
-                                        const colorValue = value.startsWith('#') ? value : `#${value}`;
-                                        setNewCategoryColor(colorValue);
-                                      }}
-                                      placeholder="#000000"
-                                      className="h-9 w-32"
-                                    />
-                                    <div 
-                                      className="w-6 h-6 rounded-full border border-gray-200"
-                                      style={{ backgroundColor: newCategoryColor }}
-                                    />
+                                  <div className="flex flex-col gap-2 mt-2">
+                                    <label className="text-sm text-gray-600 dark:text-gray-400">颜色选择器:</label>
+                                    <div className="flex flex-col items-center">
+                                      <HexColorPicker 
+                                        color={newCategoryColor} 
+                                        onChange={setNewCategoryColor}
+                                      />
+                                      <div className="flex items-center gap-2 mt-2">
+                                        <div 
+                                          className="w-8 h-8 rounded-full border border-gray-200"
+                                          style={{ backgroundColor: newCategoryColor }}
+                                        />
+                                        <Input
+                                          type="text"
+                                          value={newCategoryColor}
+                                          onChange={(e) => setNewCategoryColor(e.target.value)}
+                                          className="h-8 w-28 text-sm"
+                                        />
+                                      </div>
+                                    </div>
                                   </div>
                                   <div className="flex justify-end mt-2">
                                     <Button
@@ -1581,34 +1584,10 @@ function App() {
                                       className="hidden flex-wrap gap-1 p-1 bg-gray-50 dark:bg-gray-900 rounded-md absolute z-10 shadow-lg border border-gray-200 dark:border-gray-700"
                                       style={{ display: 'none' }}
                                     >
-                                      {colorPalette.map((color) => (
-                                        <div 
-                                          key={color} 
-                                          className="w-5 h-5 rounded-full cursor-pointer"
-                                          style={{ backgroundColor: color }}
-                                          onClick={() => {
-                                            const newCategories = [...categories];
-                                            const index = newCategories.findIndex((c) => c.id === category.id);
-                                            newCategories[index] = {
-                                              ...newCategories[index],
-                                              color,
-                                            };
-                                            saveCategories(newCategories);
-                                            const colors = document.getElementById(`colors-${category.id}`);
-                                            if (colors) {
-                                              colors.style.display = 'none';
-                                            }
-                                          }}
-                                        />
-                                      ))}
-                                      <div className="w-full mt-1 px-1 flex items-center gap-1">
-                                        <Input
-                                          type="text"
-                                          defaultValue={category.color}
-                                          placeholder="#000000"
-                                          className="h-7 text-xs"
-                                          onChange={(e) => {
-                                            const color = e.target.value;
+                                      <div className="w-full p-2">
+                                        <HexColorPicker 
+                                          color={category.color}
+                                          onChange={(color) => {
                                             const newCategories = [...categories];
                                             const index = newCategories.findIndex((c) => c.id === category.id);
                                             newCategories[index] = {
@@ -1618,12 +1597,44 @@ function App() {
                                             saveCategories(newCategories);
                                           }}
                                         />
-                                        <div 
-                                          className="w-5 h-5 rounded-full border border-gray-200"
-                                          style={{ backgroundColor: category.color }}
-                                        />
+                                        <div className="flex items-center gap-2 mt-2">
+                                          <div 
+                                            className="w-6 h-6 rounded-full border border-gray-200"
+                                            style={{ backgroundColor: category.color }}
+                                          />
+                                          <Input
+                                            type="text"
+                                            value={category.color}
+                                            placeholder="#000000"
+                                            className="h-7 text-xs"
+                                            onChange={(e) => {
+                                              const color = e.target.value;
+                                              const newCategories = [...categories];
+                                              const index = newCategories.findIndex((c) => c.id === category.id);
+                                              newCategories[index] = {
+                                                ...newCategories[index],
+                                                color,
+                                              };
+                                              saveCategories(newCategories);
+                                            }}
+                                          />
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 px-2 text-xs"
+                                            onClick={() => {
+                                              const colors = document.getElementById(`colors-${category.id}`);
+                                              if (colors) {
+                                                colors.style.display = 'none';
+                                              }
+                                            }}
+                                          >
+                                            确定
+                                          </Button>
+                                        </div>
                                       </div>
-                                    </div>
+                                     </div>
                                     <Button
                                       variant="outline"
                                       size="sm"

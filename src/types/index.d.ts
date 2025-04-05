@@ -27,4 +27,5 @@ declare module '@radix-ui/react-toast';
 declare module '@radix-ui/react-toggle-group';
 declare module '@radix-ui/react-toggle';
 declare module '@radix-ui/react-tooltip';
-declare module 'vaul'; 
+declare module 'vaul';
+declare module 'react-colorful'; 
