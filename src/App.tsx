@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { format, parse, differenceInCalendarMonths, addMonths, subMonths } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { v4 as uuidv4 } from "uuid";
@@ -10,9 +10,12 @@ import {
   useSpring, 
   useInView, 
   useAnimation, 
-  animate
+  animate,
+  Reorder // 新增Reorder组件用于可拖拽排序
 } from "framer-motion";
 import { useSpring as useReactSpring, animated } from '@react-spring/web';
+import Particles from "@tsparticles/react";
+import { loadSlim } from "tsparticles-slim"; // 导入粒子库
 import {
   AreaChart,
   Area,
@@ -874,25 +877,46 @@ function App() {
     const updatedCategories = [...categories, newCategory];
     saveCategories(updatedCategories);
     setNewCategoryName('');
+
+    // 添加成功的视觉反馈
+    toast({
+      title: "✅ 分类添加成功",
+      description: `已添加新分类 "${newCategoryName.trim()}"`,
+      duration: 2000,
+    });
+    
+    // 短暂延迟后关闭添加面板
+    setTimeout(() => {
     setIsAddingCategory(false);
+    }, 300);
   };
 
   const removeCategory = (id: string) => {
+    // 找到要删除的分类名称，用于提示
+    const categoryToRemove = categories.find(category => category.id === id);
+    const categoryName = categoryToRemove ? categoryToRemove.name : "";
+    
     const updatedCategories = categories.filter(category => category.id !== id);
     saveCategories(updatedCategories);
+    
+    // 添加删除成功的视觉反馈
+    toast({
+      title: "🗑️ 分类已删除",
+      description: `已删除分类 "${categoryName}"`,
+      duration: 2000,
+    });
   };
 
-  useEffect(() => {
+  // 将 handleCategorySelection 函数移到这里，不再放在 useEffect 中
     const handleCategorySelection = (value: string, allocationId: string) => {
-      if (value === 'manage_categories') {
+    if (value === 'manage_categories') {
         setIsAddingCategory(true);
-        const allocation = currentMonthData.allocations.find(a => a.id === allocationId);
+      const allocation = currentMonthData.allocations.find(a => a.id === allocationId);
         if (allocation) {
-          updateAllocation(allocationId, 'category', allocation.category || '');
+        updateAllocation(allocationId, 'category', allocation.category || '');
         }
       }
     };
-  }, []);
 
   // 计算各组支出比例和超支状态
   const calculateGroupExpenses = () => {
@@ -1098,6 +1122,19 @@ function App() {
       </div>
     );
   };
+
+  // 新增预设颜色和粒子配置
+  const presetColors = [
+    "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", 
+    "#ec4899", "#06b6d4", "#14b8a6", "#f97316", "#6366f1",
+    "#84cc16", "#a855f7", "#14b8a6", "#0ea5e9", "#f43f5e",
+    "#64748b"
+  ];
+  
+  // 新增粒子初始化函数
+  const particlesInit = useCallback(async (engine: any) => {
+    await loadSlim(engine);
+  }, []);
 
   return (
     <div className="min-h-screen w-screen overflow-x-hidden bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-sky-50 via-indigo-50 to-emerald-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
@@ -1422,16 +1459,324 @@ function App() {
 
                       <Popover>
                         <PopoverTrigger asChild>
+                          <motion.div
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.97 }}
+                          >
                           <Button
                             variant="outline"
                             size="sm"
-                        className="h-10 flex items-center gap-1 border-blue-200 dark:border-blue-800 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20"
-                          >
-                        <TagIcon className="h-4 w-4 text-green-500" />
+                              className="h-10 flex items-center gap-1 border-blue-200 dark:border-blue-800 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 shadow-sm hover:shadow-md transition-all"
+                            >
+                              <motion.div
+                                animate={{ rotate: [0, 0, -10, 10, 0] }}
+                                transition={{ 
+                                  duration: 0.5, 
+                                  repeat: Infinity, 
+                                  repeatDelay: 5
+                                }}
+                              >
+                                <TagIcon className="h-4 w-4 text-green-500" />
+                              </motion.div>
                             管理分类
                           </Button>
+                          </motion.div>
                         </PopoverTrigger>
-                    <PopoverContent className="w-[350px] p-0">{/* 分类内容... */}</PopoverContent>
+                        <PopoverContent className="w-[350px] p-0 overflow-hidden shadow-xl border border-green-100 dark:border-green-800 rounded-xl">
+                          {/* 标题栏 - 优化设计 */}
+                          <div className="bg-gradient-to-r from-emerald-500 to-green-500 p-4 border-b border-green-400 relative overflow-hidden">
+                            {/* 背景装饰元素 */}
+                            <div className="absolute inset-0 overflow-hidden">
+                              <div className="absolute top-0 left-0 w-full h-full">
+                                <div className="absolute top-2 right-5 w-20 h-20 bg-white/10 rounded-full blur-md animate-pulse"></div>
+                                <div className="absolute bottom-0 left-10 w-16 h-16 bg-white/10 rounded-full blur-md animate-pulse" style={{animationDelay: '1s'}}></div>
+                              </div>
+                              <div className="absolute top-0 left-0 w-full h-full opacity-20">
+                                <div className="absolute top-4 left-10 w-1 h-1 bg-white rounded-full animate-ping" style={{animationDuration: '3s'}}></div>
+                                <div className="absolute top-10 left-20 w-1 h-1 bg-white rounded-full animate-ping" style={{animationDuration: '2s', animationDelay: '0.5s'}}></div>
+                                <div className="absolute top-16 right-10 w-1 h-1 bg-white rounded-full animate-ping" style={{animationDuration: '4s', animationDelay: '1s'}}></div>
+                              </div>
+                            </div>
+                            
+                            <motion.div 
+                              className="flex flex-col relative z-10"
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.3 }}
+                            >
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-white font-medium text-lg flex items-center gap-2">
+                                  <motion.div
+                                    animate={{ rotate: [0, 10, -10, 0] }}
+                                    transition={{ 
+                                      duration: 0.5, 
+                                      delay: 0.3,
+                                      ease: "easeInOut" 
+                                    }}
+                                  >
+                                    <TagIcon className="h-5 w-5" />
+                                  </motion.div>
+                                预算分类管理
+                              </h4>
+                                
+                                <motion.div 
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                >
+                              <Button
+                                size="sm"
+                                variant="default"
+                                    className="h-8 px-3 bg-white text-green-600 hover:bg-green-50 border-none shadow-md hover:shadow-lg transition-all"
+                                    onClick={addCategory}
+                                    disabled={!newCategoryName.trim()}
+                              >
+                                <PlusIcon className="h-3.5 w-3.5 mr-1" />
+                                添加
+                              </Button>
+                                </motion.div>
+                            </div>
+                            
+                                  <div className="flex items-center gap-2">
+                                <motion.div
+                                  initial={{ scale: 0.9, opacity: 0 }}
+                                  animate={{ scale: 1, opacity: 1 }}
+                                  transition={{ duration: 0.3, delay: 0.1 }}
+                                  className="flex-1"
+                                >
+                                    <Input
+                                      value={newCategoryName}
+                                      onChange={(e) => setNewCategoryName(e.target.value)}
+                                    placeholder="新分类名称"
+                                    className="h-9 text-sm bg-white/80 border-white/30 text-green-900 placeholder:text-green-600/60 focus-visible:ring-white"
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && newCategoryName.trim()) {
+                                        addCategory();
+                                      }
+                                    }}
+                                  />
+                                </motion.div>
+                                <motion.div 
+                                  className="relative flex items-center rounded-full overflow-hidden"
+                                  initial={{ scale: 0.9, opacity: 0 }}
+                                  animate={{ scale: 1, opacity: 1 }}
+                                  transition={{ duration: 0.3, delay: 0.2 }}
+                                  whileHover={{ scale: 1.05 }}
+                                  style={{ width: '36px', height: '36px' }}
+                                >
+                                  <input 
+                                    type="color" 
+                                          value={newCategoryColor}
+                                          onChange={(e) => setNewCategoryColor(e.target.value)}
+                                    className="absolute opacity-0 w-full h-full cursor-pointer"
+                                    title="选择分类颜色"
+                                        />
+                                  <div 
+                                    className="w-full h-full rounded-full border border-white/30"
+                                    style={{ backgroundColor: newCategoryColor }}
+                                  >
+                                    <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-white/30 via-transparent to-transparent pointer-events-none"></div>
+                                      </div>
+                                </motion.div>
+                                    </div>
+                            </motion.div>
+                                  </div>
+                          
+                          {/* 预设颜色部分 */}
+                          <motion.div 
+                            className="p-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.3, delay: 0.1 }}
+                          >
+                            <div className="flex flex-wrap gap-2 justify-center">
+                              {presetColors.map((color, index) => (
+                                <motion.div
+                                  key={color}
+                                  initial={{ scale: 0, opacity: 0 }}
+                                  animate={{ scale: 1, opacity: 1 }}
+                                  transition={{ 
+                                    duration: 0.3, 
+                                    delay: 0.2 + index * 0.03,
+                                    type: "spring", 
+                                    stiffness: 200 
+                                  }}
+                                  whileHover={{ 
+                                    scale: 1.2, 
+                                    boxShadow: `0 0 8px ${color}`,
+                                    zIndex: 10
+                                  }}
+                                  whileTap={{ scale: 0.9 }}
+                                  className="relative cursor-pointer w-7 h-7 flex items-center justify-center"
+                                  onClick={() => setNewCategoryColor(color)}
+                                  title="点击选择此颜色"
+                                >
+                                  <div 
+                                    className="w-6 h-6 rounded-full shadow-md"
+                                    style={{ backgroundColor: color }}
+                                  >
+                                    {/* 高光效果 */}
+                                    <div className="absolute inset-0 rounded-full bg-gradient-to-br from-white/30 to-transparent pointer-events-none"></div>
+                                  </div>
+                                  
+                                  {/* 当前选中状态 */}
+                                  {color === newCategoryColor && (
+                                    <motion.div 
+                                      className="absolute inset-0 flex items-center justify-center text-white"
+                                      initial={{ scale: 0 }}
+                                      animate={{ scale: 1 }}
+                                      transition={{ type: "spring", stiffness: 300 }}
+                                    >
+                                      <div className="bg-black/20 w-full h-full rounded-full flex items-center justify-center">
+                                        <CheckIcon className="w-3.5 h-3.5" />
+                                </div>
+                                    </motion.div>
+                            )}
+                                </motion.div>
+                              ))}
+                          </div>
+                          </motion.div>
+                          
+                          {/* 分类列表 */}
+                          <div className="max-h-[320px] overflow-y-auto p-3 bg-gray-50 dark:bg-gray-800/50">
+                            <div className="space-y-2">
+                              <AnimatePresence>
+                                <Reorder.Group 
+                                  axis="y" 
+                                  values={categories} 
+                                  onReorder={(newOrder) => saveCategories(newOrder)}
+                                  className="space-y-2"
+                                  >
+                                    {categories.map((category, index) => (
+                                    <Reorder.Item
+                                        key={category.id} 
+                                      value={category}
+                                      whileDrag={{ 
+                                        scale: 1.03, 
+                                        boxShadow: "0 5px 15px rgba(0,0,0,0.1)",
+                                        zIndex: 10
+                                      }}
+                                    >
+                                      <motion.div
+                                        className="flex items-center justify-between group bg-white dark:bg-gray-800 p-3 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 border border-gray-100 dark:border-gray-700 overflow-hidden"
+                                        initial={{ opacity: 0, x: -20, height: 0 }}
+                                        animate={{ opacity: 1, x: 0, height: 'auto' }}
+                                        exit={{ opacity: 0, x: 20, height: 0 }}
+                                        transition={{ 
+                                          duration: 0.3, 
+                                          delay: index * 0.05,
+                                          ease: [0.22, 1, 0.36, 1]
+                                        }}
+                                        whileHover={{ 
+                                          backgroundColor: "rgba(249, 250, 251, 1)",
+                                          borderColor: "rgba(209, 213, 219, 1)"
+                                        }}
+                                      >
+                                        <div className="flex items-center gap-3 flex-1">
+                                          {/* 拖动提示图标 */}
+                                          <motion.div
+                                            whileHover={{ scale: 1.1 }}
+                                            className="w-6 h-6 flex items-center justify-center text-gray-400 cursor-grab active:cursor-grabbing"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                              <circle cx="9" cy="5" r="1" />
+                                              <circle cx="9" cy="12" r="1" />
+                                              <circle cx="9" cy="19" r="1" />
+                                              <circle cx="15" cy="5" r="1" />
+                                              <circle cx="15" cy="12" r="1" />
+                                              <circle cx="15" cy="19" r="1" />
+                                            </svg>
+                                          </motion.div>
+                                          
+                                          {/* 颜色选择器 */}
+                                          <div className="relative group/color" style={{ width: '28px', height: '28px' }}>
+                                              <input
+                                              type="color" 
+                                              value={category.color}
+                                                onChange={(e) => {
+                                                  const newCategories = [...categories];
+                                                const index = newCategories.findIndex(c => c.id === category.id);
+                                                  newCategories[index] = {
+                                                    ...newCategories[index],
+                                                  color: e.target.value,
+                                                  };
+                                                  saveCategories(newCategories);
+                                                }}
+                                              className="absolute opacity-0 w-full h-full cursor-pointer z-10"
+                                            />
+                                            <div 
+                                              className="w-full h-full rounded-full border border-gray-200 dark:border-gray-600 transition-transform duration-200 group-hover/color:scale-110"
+                                                      style={{ backgroundColor: category.color }}
+                                            >
+                                              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-white/20 to-transparent pointer-events-none"></div>
+                                            </div>
+                                          </div>
+                                          
+                                          {/* 分类名称输入框 */}
+                                          <input
+                                                      type="text"
+                                            value={category.name}
+                                                      onChange={(e) => {
+                                                        const newCategories = [...categories];
+                                              const index = newCategories.findIndex(
+                                                (c) => c.id === category.id,
+                                              );
+                                                        newCategories[index] = {
+                                                          ...newCategories[index],
+                                                name: e.target.value,
+                                                        };
+                                                        saveCategories(newCategories);
+                                                      }}
+                                            className="text-sm border-none bg-transparent focus:outline-none focus:ring-1 focus:ring-green-500 px-2 py-1 rounded flex-1"
+                                          />
+                                                  </div>
+                                        
+                                        {/* 删除按钮 */}
+                                        <motion.div
+                                          whileHover={{ scale: 1.1 }}
+                                          whileTap={{ scale: 0.9 }}
+                                        >
+                                              <Button
+                                                variant="outline"
+                                                size="sm"
+                                            className="h-7 w-7 p-0 rounded-full bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center border-red-100 relative overflow-hidden group"
+                                                onClick={() => removeCategory(category.id)}
+                                                title="删除此分类"
+                                              >
+                                            {/* 删除按钮的涟漪效果 */}
+                                            <motion.div 
+                                              className="absolute inset-0 bg-red-200 opacity-0 group-hover:opacity-50"
+                                              initial={{ scale: 0 }}
+                                              whileHover={{ 
+                                                scale: 2,
+                                                opacity: 0.5,
+                                                transition: { duration: 0.3 } 
+                                              }}
+                                              style={{ borderRadius: '50%', transformOrigin: "center" }}
+                                            />
+                                            <XIcon className="h-4 w-4 relative z-10" />
+                                              </Button>
+                                        </motion.div>
+                                      </motion.div>
+                                    </Reorder.Item>
+                                  ))}
+                                </Reorder.Group>
+                              </AnimatePresence>
+                                  </div>
+                          </div>
+                          
+                          {/* 提示信息 */}
+                          <motion.div 
+                            className="p-3 border-t border-gray-200 dark:border-gray-700 flex justify-center bg-white dark:bg-gray-800"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 0.5 }}
+                          >
+                            <div className="text-xs text-gray-500 dark:text-gray-400 text-center flex flex-col items-center gap-1">
+                              <span>提示：点击颜色选择器可以自定义分类颜色</span>
+                              <span>拖拽分类可以调整排序</span>
+                            </div>
+                          </motion.div>
+                        </PopoverContent>
                       </Popover>
 
                       <Button
@@ -1511,7 +1856,9 @@ function App() {
                                       <div className="flex gap-1">
                                         <UISelect
                                   value={allocation.category || ''}
-                                  onValueChange={(value) => updateAllocation(allocation.id, 'category', value)}
+                                  onValueChange={(value: string) => {
+                                    updateAllocation(allocation.id, 'category', value);
+                                  }}
                                         >
                                           <UISelectTrigger className="w-full h-9 border-gray-200">
                                             <UISelectValue placeholder="选择分类" />
@@ -1944,9 +2291,9 @@ function App() {
                                 key={`cell-${index}`}
                               fill={`url(#colorGradient-${index})`} 
                               stroke="rgba(255,255,255,0.5)"
-                              strokeWidth={2}
+                                  strokeWidth={2} 
                               className="hover:opacity-90 cursor-pointer transition-opacity focus:outline-none"
-                              style={{
+                                  style={{ 
                                 filter: 'drop-shadow(0px 3px 5px rgba(0, 0, 0, 0.15))',
                               }}
                               tabIndex={-1} // 防止获取焦点，避免出现黑框
@@ -1969,7 +2316,7 @@ function App() {
                           wrapperStyle={{ paddingTop: '0px' }} // 恢复原来的内边距
                         />
                         
-                        <RechartsTooltip 
+                        <RechartsTooltip
                           formatter={(value, name, props) => [
                             `¥${formatNumber(value)}`, 
                             `${props.payload.name}`
