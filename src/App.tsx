@@ -45,6 +45,8 @@ import {
   Download as DownloadIcon,
   Edit as EditIcon,
   Filter as FilterIcon,
+  Image as ImageIcon,
+  ImagePlus,
   Layers as LayersIcon,
   LayoutTemplate as LayoutTemplateIcon,
   List as ListIcon,
@@ -112,6 +114,8 @@ interface Allocation {
   note?: string;
   manualGroup?: string;
   group?: string; // 添加缺失的group属性
+  images?: string[]; // 存储图片的base64字符串数组
+  mainImageIndex?: number; // 首图索引，默认为0
 }
 
 interface MonthData {
@@ -682,6 +686,11 @@ function App() {
   const [activeTab, setActiveTab] = useState<'budget' | 'reports' | 'categories' | 'templates' | 'settings'>('budget');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
 
+  // 在其他状态变量下面添加
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewAllocationId, setPreviewAllocationId] = useState<string | null>(null);
+  const [previewImageIndex, setPreviewImageIndex] = useState(0);
+
   const currentMonthKey = format(selectedDate, 'yyyy-MM');
   const currentMonthData = monthlyData[currentMonthKey] || { income: 0, allocations: [] };
 
@@ -734,6 +743,7 @@ function App() {
           id: crypto.randomUUID(),
           purpose: '',
           amount: 0,
+          images: [], // 初始化为空数组
         },
       ],
     });
@@ -1135,6 +1145,203 @@ function App() {
   const particlesInit = useCallback(async (engine: any) => {
     await loadSlim(engine);
   }, []);
+
+  // 处理图片上传
+  const handleImageUpload = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const fileToUpload = files[0]; // 只处理第一张图片
+    
+    // 检查文件类型
+    if (!fileToUpload.type.match('image.*')) {
+      toast({
+        title: "格式错误",
+        description: "请上传图片文件"
+      });
+      return;
+    }
+    
+    // 移除文件大小限制
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target && event.target.result) {
+        const base64String = event.target.result as string;
+        
+        // 获取当前分配项
+        const currentAllocation = currentMonthData.allocations.find(a => a.id === id);
+        if (!currentAllocation) return;
+        
+        // 更新 images 数组
+        const updatedImages = currentAllocation.images ? [...currentAllocation.images, base64String] : [base64String];
+        
+        // 如果是第一张图片，设置为首图
+        const mainImageIndex = currentAllocation.mainImageIndex !== undefined 
+          ? currentAllocation.mainImageIndex 
+          : 0;
+        
+        // 更新分配项
+        updateMonthData({
+          ...currentMonthData,
+          allocations: currentMonthData.allocations.map(allocation => 
+            allocation.id === id 
+              ? { 
+                  ...allocation, 
+                  images: updatedImages,
+                  mainImageIndex: mainImageIndex
+                } 
+              : allocation
+          )
+        });
+      }
+    };
+    reader.readAsDataURL(fileToUpload);
+    
+    // 清空文件输入，以便可以重新选择相同的文件
+    e.target.value = '';
+  };
+
+  // 添加设置首图的功能
+  const setMainImage = (allocationId: string, imageIndex: number) => {
+    updateMonthData({
+      ...currentMonthData,
+      allocations: currentMonthData.allocations.map(allocation => 
+        allocation.id === allocationId 
+          ? { ...allocation, mainImageIndex: imageIndex } 
+          : allocation
+      )
+    });
+    
+    // 提示用户设置成功
+    toast({
+      title: "设置成功",
+      description: "已将选中图片设为首图"
+    });
+  };
+
+  // 处理图片删除
+  const handleRemoveImage = (allocationId: string, imageIndex: number) => {
+    const currentAllocation = currentMonthData.allocations.find(a => a.id === allocationId);
+    if (!currentAllocation || !currentAllocation.images) return;
+    
+    const updatedImages = [...currentAllocation.images];
+    updatedImages.splice(imageIndex, 1);
+    
+    updateMonthData({
+      ...currentMonthData,
+      allocations: currentMonthData.allocations.map(allocation => 
+        allocation.id === allocationId 
+          ? { ...allocation, images: updatedImages.length > 0 ? updatedImages : undefined } 
+          : allocation
+      )
+    });
+  };
+
+  const closeImagePreview = () => {
+    setPreviewImage(null);
+    setPreviewAllocationId(null);
+    setPreviewImageIndex(0);
+  };
+
+  const navigatePreviewImage = (direction: 'prev' | 'next') => {
+    if (previewAllocationId) {
+      const allocation = currentMonthData.allocations.find(a => a.id === previewAllocationId);
+      if (allocation?.images) {
+        const index = allocation.images.indexOf(previewImage);
+        if (direction === 'prev' && index > 0) {
+          setPreviewImage(allocation.images[index - 1]);
+          setPreviewImageIndex(index - 1);
+        } else if (direction === 'next' && index < allocation.images.length - 1) {
+          setPreviewImage(allocation.images[index + 1]);
+          setPreviewImageIndex(index + 1);
+        }
+      }
+    }
+  };
+
+  // 打开图片预览的函数
+  const openImagePreview = (allocationId: string, initialIndex: number = 0) => {
+    const allocation = currentMonthData.allocations.find(a => a.id === allocationId);
+    if (allocation && allocation.images && allocation.images.length > 0) {
+      setPreviewAllocationId(allocationId);
+      setPreviewImageIndex(initialIndex);
+      setPreviewImage(allocation.images[initialIndex]);
+    }
+  };
+
+  const renderImageUploadButton = (id: string, addNew?: boolean) => {
+    return (
+      <label 
+        htmlFor={`image-upload-${id}`}
+        className={addNew 
+          ? "cursor-pointer h-7 min-w-[60px] px-2 flex items-center justify-center rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 gap-1" 
+          : "cursor-pointer h-12 w-12 flex items-center justify-center rounded-lg border border-dashed border-gray-300 hover:border-blue-400 transition-colors"
+        }
+      >
+        {addNew 
+          ? (
+            <>
+              <PlusIcon className="h-3.5 w-3.5 text-gray-500" />
+              <span className="text-xs text-gray-600">上传</span>
+            </>
+          ) 
+          : <ImagePlus className="h-5 w-5 text-gray-400 hover:text-blue-500" />
+        }
+        <input
+          id={`image-upload-${id}`}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          onChange={(e) => handleImageUpload(id, e)}
+        />
+      </label>
+    );
+  };
+
+  // 添加拖动排序的函数
+  const handleReorderAllocations = (reorderedItems: Allocation[]) => {
+    // 更新月度数据中的分配项顺序
+    updateMonthData({
+      ...currentMonthData,
+      allocations: reorderedItems
+    });
+    
+    // 可选：添加排序成功的视觉反馈
+    toast({
+      title: "排序已更新",
+      description: "分配项顺序已保存",
+      duration: 1500,
+    });
+  };
+
+  // 在return语句前添加样式
+  // 添加CSS样式
+  const tableStyles = `
+    .allocations-table-container tbody tr {
+      position: relative;
+      z-index: 1;
+      transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .allocations-table-container tbody tr:hover {
+      background-color: rgba(243, 244, 246, 0.5);
+    }
+    
+    .allocations-table-container tbody tr[data-dragging="true"] {
+      background-color: rgba(239, 246, 255, 0.7);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      z-index: 10;
+    }
+    
+    .drag-handle {
+      cursor: grab;
+    }
+    
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+  `;
 
   return (
     <div className="min-h-screen w-screen overflow-x-hidden bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-sky-50 via-indigo-50 to-emerald-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
@@ -1797,6 +2004,24 @@ function App() {
                   <Table className="allocations-table-container">
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-[30px]" title="拖动排序">
+                          <svg 
+                            xmlns="http://www.w3.org/2000/svg" 
+                            width="16" 
+                            height="16" 
+                            viewBox="0 0 24 24" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            strokeWidth="2" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round" 
+                            className="mx-auto text-gray-400"
+                          >
+                            <line x1="8" y1="6" x2="16" y2="6"></line>
+                            <line x1="8" y1="12" x2="16" y2="12"></line>
+                            <line x1="8" y1="18" x2="16" y2="18"></line>
+                          </svg>
+                        </TableHead>
                         <TableHead>用途</TableHead>
                         <TableHead className="w-[120px]">金额</TableHead>
                         <TableHead className="w-[120px]">分类</TableHead>
@@ -1804,19 +2029,55 @@ function App() {
                             <TableHead className="w-[120px]">所属组</TableHead>
                           )}
                         <TableHead>备注</TableHead>
+                        <TableHead className="w-[100px]">附件</TableHead>
                         <TableHead className="w-[70px] text-center">操作</TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
+                    
+                    {/* 替换原TableBody为Reorder.Group */}
+                    <Reorder.Group 
+                      axis="y" 
+                      values={currentMonthData.allocations} 
+                      onReorder={handleReorderAllocations}
+                      as="tbody"
+                      className="relative"
+                    >
                       <AnimatePresence>
                       {currentMonthData.allocations.map((allocation) => (
-                          <motion.tr
-                                key={allocation.id}
+                          <Reorder.Item
+                            key={allocation.id}
+                            value={allocation}
+                            as="tr"
                             initial={{ opacity: 0, height: 0 }}
                             animate={{ opacity: 1, height: 'auto' }}
                             exit={{ opacity: 0, height: 0 }}
                             transition={{ duration: 0.2 }}
+                            className="relative cursor-grab active:cursor-grabbing hover:bg-gray-50 group"
+                            dragListener={true}
+                            dragControls={undefined}
                           >
+                                    <td className="p-2 w-[30px] text-center">
+                                      <div className="flex items-center justify-center h-full">
+                                        <div className="drag-handle p-1 rounded hover:bg-gray-100">
+                                          <svg 
+                                            xmlns="http://www.w3.org/2000/svg" 
+                                            width="20" 
+                                            height="20" 
+                                            viewBox="0 0 24 24" 
+                                            fill="none" 
+                                            stroke="currentColor" 
+                                            strokeWidth="2" 
+                                            strokeLinecap="round" 
+                                            strokeLinejoin="round" 
+                                            className="text-gray-400 group-hover:text-gray-600 transition-colors"
+                                          >
+                                            <line x1="8" y1="6" x2="16" y2="6"></line>
+                                            <line x1="8" y1="12" x2="16" y2="12"></line>
+                                            <line x1="8" y1="18" x2="16" y2="18"></line>
+                                          </svg>
+                                        </div>
+                                      </div>
+                                    </td>
                                     <TableCell>
                                       <div className="relative group">
                                         <Input
@@ -1975,6 +2236,49 @@ function App() {
                                 </PopoverContent>
                               </Popover>
                                     </TableCell>
+                                    <TableCell>
+                                      <div className="flex items-center gap-2">
+                                        {/* 只显示第一张图片和数量指示器 */}
+                                        <div className="flex items-center">
+                                          {allocation.images && allocation.images.length > 0 ? (
+                                            <div className="relative">
+                                              <div 
+                                                className="relative h-12 w-12 overflow-hidden rounded-lg border border-gray-200 hover:border-blue-400 transition-all shadow-sm hover:shadow-md cursor-pointer bg-gray-50"
+                                                onClick={() => openImagePreview(allocation.id, allocation.mainImageIndex || 0)}
+                                              >
+                                                <img 
+                                                  src={allocation.images[allocation.mainImageIndex || 0]} 
+                                                  alt="首张图片" 
+                                                  className="h-full w-full object-cover"
+                                                />
+                                              </div>
+                                              
+                                              {/* 如果有多张图片，显示数量标记 */}
+                                              {allocation.images.length > 1 && (
+                                                <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center shadow-md">
+                                                  {allocation.images.length}
+                                                </div>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <div className="flex-shrink-0">
+                                              {/* 上传按钮 */}
+                                              {renderImageUploadButton(allocation.id)}
+                                            </div>
+                                          )}
+                                          
+                                          {/* 如果有图片，仅显示"上传更多"按钮，移除查看按钮 */}
+                                          {allocation.images && allocation.images.length > 0 && (
+                                            <div className="ml-2">
+                                              {/* 添加新图片按钮 */}
+                                              <div className="inline-block">
+                                                {renderImageUploadButton(allocation.id, true)}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </TableCell>
                           <TableCell className="text-center">
                             <Button
                               onClick={() => removeAllocation(allocation.id)}
@@ -1992,10 +2296,10 @@ function App() {
                               </svg>
                             </Button>
                           </TableCell>
-                          </motion.tr>
+                          </Reorder.Item>
                       ))}
                       </AnimatePresence>
-                          </TableBody>
+                    </Reorder.Group>
                   </Table>
                 </div>
               </div>
@@ -3062,6 +3366,141 @@ function App() {
 
       {/* 添加Toast容器到应用中 */}
       <ToastContainer />
+      
+      {/* 图片预览对话框 */}
+      <Dialog open={!!previewImage} onOpenChange={closeImagePreview}>
+        <DialogContent className="max-w-4xl p-0 overflow-hidden bg-black/80 border-0 [&>button]:hidden">
+          <div className="relative flex flex-col items-center justify-center">
+            {previewImage && (
+              <div className="relative w-full flex items-center justify-center">
+                <img 
+                  src={previewImage} 
+                  alt="图片预览" 
+                  className="w-full h-auto max-h-[80vh] object-contain" 
+                />
+                
+                {previewAllocationId && (() => {
+                  const allocation = currentMonthData.allocations.find(a => a.id === previewAllocationId);
+                  return allocation?.images && allocation.images.length > 1 ? (
+                    <>
+                      {/* 大型左右导航按钮，放置在图片两侧 */}
+                      <Button
+                        variant="outline" 
+                        size="icon"
+                        className="absolute left-4 rounded-full w-16 h-16 bg-white/30 backdrop-blur-sm hover:bg-white/50 border-2 border-white/50 text-white shadow-lg hover:shadow-white/30"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigatePreviewImage('prev');
+                        }}
+                      >
+                        <ChevronLeftIcon className="h-12 w-12" />
+                      </Button>
+                      
+                      <Button
+                        variant="outline" 
+                        size="icon"
+                        className="absolute right-4 rounded-full w-16 h-16 bg-white/30 backdrop-blur-sm hover:bg-white/50 border-2 border-white/50 text-white shadow-lg hover:shadow-white/30"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigatePreviewImage('next');
+                        }}
+                      >
+                        <ChevronRightIcon className="h-12 w-12" />
+                      </Button>
+                      
+                      {/* 底部控制栏 */}
+                      <div className="absolute inset-x-0 bottom-0 p-6 bg-gradient-to-t from-black/90 to-transparent flex justify-between items-center">
+                        {/* 导航和页码信息 */}
+                        <div className="flex items-center space-x-3 text-white">
+                          <span className="text-lg font-medium backdrop-blur-sm bg-black/50 px-4 py-2 rounded-full border border-white/20">
+                            {previewImageIndex + 1} / {allocation.images.length}
+                          </span>
+                          
+                          {/* 设为首图按钮 */}
+                          <Button
+                            variant="outline"
+                            className="rounded-full h-10 px-4 bg-blue-500/40 backdrop-blur-sm hover:bg-blue-500/60 border border-blue-400/50 text-white text-sm font-medium"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (previewAllocationId) {
+                                setMainImage(previewAllocationId, previewImageIndex);
+                              }
+                            }}
+                          >
+                            设为首图
+                          </Button>
+                        </div>
+
+                        {/* 删除当前图片按钮 */}
+                        <Button
+                          variant="outline" 
+                          size="icon"
+                          className="rounded-full w-14 h-14 bg-red-500/40 backdrop-blur-sm hover:bg-red-500/60 border-2 border-red-400/50 text-white shadow-md hover:shadow-red-500/30"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (previewAllocationId) {
+                              handleRemoveImage(previewAllocationId, previewImageIndex);
+                              
+                              // 如果删除的是最后一张图片，关闭预览
+                              const allocation = currentMonthData.allocations.find(a => a.id === previewAllocationId);
+                              if (allocation?.images && allocation.images.length <= 1) {
+                                closeImagePreview();
+                              } else {
+                                // 否则导航到下一张
+                                navigatePreviewImage('next');
+                              }
+                            }
+                          }}
+                          title="删除此图片"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="h-8 w-8">
+                            <path d="M3 6h18"></path>
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                          </svg>
+                        </Button>
+                      </div>
+                    </>
+                  ) : allocation?.images && allocation.images.length === 1 ? (
+                    // 如果只有一张图片，只显示删除按钮
+                    <div className="absolute inset-x-0 bottom-0 p-6 bg-gradient-to-t from-black/90 to-transparent flex justify-end items-center">
+                      <Button
+                        variant="outline" 
+                        size="icon"
+                        className="rounded-full w-14 h-14 bg-red-500/40 backdrop-blur-sm hover:bg-red-500/60 border-2 border-red-400/50 text-white shadow-md hover:shadow-red-500/30"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (previewAllocationId) {
+                            handleRemoveImage(previewAllocationId, 0);
+                            closeImagePreview();
+                          }
+                        }}
+                        title="删除此图片"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="h-8 w-8">
+                          <path d="M3 6h18"></path>
+                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                        </svg>
+                      </Button>
+                    </div>
+                  ) : null;
+                })()}
+              </div>
+            )}
+            
+            {/* 右上角关闭按钮 */}
+            <Button
+              variant="outline" 
+              size="icon"
+              className="absolute top-4 right-4 rounded-full w-14 h-14 bg-white/30 hover:bg-white/50 text-white border-2 border-white/50 shadow-lg hover:shadow-white/30 z-50"
+              onClick={closeImagePreview}
+            >
+              <XIcon className="h-8 w-8" />
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
